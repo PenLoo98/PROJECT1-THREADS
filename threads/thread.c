@@ -176,6 +176,7 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
+   //스레드 구조체 메모리에 할당, 스레드 초기화, 스레스 함수, 유저 함수 지정, 스케줄러에 추가
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
@@ -301,6 +302,7 @@ thread_yield (void) {
 
 	ASSERT (!intr_context ());
 
+	//스레드를 바꾸기 전에 interrupt를 비활성화 시킨다.
 	old_level = intr_disable ();
 	if (curr != idle_thread)
 		list_push_back (&ready_list, &curr->elem);
