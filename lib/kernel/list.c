@@ -84,6 +84,9 @@ list_next (struct list_elem *elem) {
    list_end() is often used in iterating through a list from
    front to back.  See the big comment at the top of list.h for
    an example. */
+/*
+실제로 존재하는 리스트의 요소는 아니고 순회하면서 끝을 표현하기 위해 존재
+*/
 struct list_elem *
 list_end (struct list *list) {
 	ASSERT (list != NULL);
@@ -153,6 +156,8 @@ list_tail (struct list *list) {
 /* Inserts ELEM just before BEFORE, which may be either an
    interior element or a tail.  The latter case is equivalent to
    list_push_back(). */
+   /* before의 prev에다 elem을 넣어줌.
+   */
 void
 list_insert (struct list_elem *before, struct list_elem *elem) {
 	ASSERT (is_interior (before) || is_tail (before));
@@ -415,6 +420,8 @@ list_sort (struct list *list, list_less_func *less, void *aux) {
 /* Inserts ELEM in the proper position in LIST, which must be
    sorted according to LESS given auxiliary data AUX.
    Runs in O(n) average case in the number of elements in LIST. */
+/* 
+*/
 void
 list_insert_ordered (struct list *list, struct list_elem *elem,
 		list_less_func *less, void *aux) {
@@ -425,6 +432,7 @@ list_insert_ordered (struct list *list, struct list_elem *elem,
 	ASSERT (less != NULL);
 
 	for (e = list_begin (list); e != list_end (list); e = list_next (e))
+	//elem이 e보다 크다면 true, e가 elem보다 작다면 true
 		if (less (elem, e, aux))
 			break;
 	return list_insert (e, elem);

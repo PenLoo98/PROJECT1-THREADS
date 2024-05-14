@@ -27,10 +27,10 @@ void debug_backtrace (void);
 #undef NOT_REACHED
 
 #ifndef NDEBUG
-#define ASSERT(CONDITION)                                       \
+#define ASSERT(CONDITION)                                        \
 	if ((CONDITION)) { } else {                             \
 		PANIC ("assertion `%s' failed.", #CONDITION);   \
-	}
+	} //케이스가 통과하면 아무것도 안하고 조건에 문제가 있으면 os를 중단하고 파일 이름을 출력한다.
 #define NOT_REACHED() PANIC ("executed an unreachable statement");
 #else
 #define ASSERT(CONDITION) ((void) 0)

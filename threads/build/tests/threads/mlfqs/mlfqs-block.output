@@ -18,7 +18,7 @@ Executing 'mlfqs-block':
 (mlfqs-block) end
 Execution of 'mlfqs-block' complete.
 Timer: 3022 ticks
-Thread: 0 idle ticks, 3022 kernel ticks, 0 user ticks
-Console: 792 characters output
+Thread: 500 idle ticks, 2522 kernel ticks, 0 user ticks
+Console: 794 characters output
 Keyboard: 0 keys pressed
 Powering off...

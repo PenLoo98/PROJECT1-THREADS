@@ -88,13 +88,24 @@ timer_elapsed (int64_t then) {
 }
 
 /* Suspends execution for approximately TICKS timer ticks. */
+//Just put it on the ready queue after they have waited for the right amount of time.
+//특정 시간 이후에 스레드를 대기 큐에 넣어서 스케줄러 이를 실행할 수 있게 만들어야 함.
+//어떻게 특정 시간 이후에 스레드를 대기 큐에 넣지??... 인터럽트를 사용해야 하나??
+//스케줄러는 어던 스레드가 실행중이고 기다리는 상태이고 자는 상태인지에 대한 테이블을 가지고 있다.
+//ublock 스레드 스케줄링이 대기큐에 있는 스레드를 못 실행 시켜 blcok
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	//timer_elapsed (start) 시작으로부터 얼마나 걸렸는지
+	// while (timer_elapsed (start) < ticks)
+	// //다른 스레드에게 양보함.
+	// 	thread_yield ();
+	if(timer_elapsed(start)<ticks){
+		//나중에 깨워야 함.
+		thread_sleep(start+ticks);
+	}
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -126,6 +137,9 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+	//만약 os_tick이 가장 빨리 일어나는 스레드의 tick보다 크다면 모든 쓰레드를 순회하며
+	//스레드를 ready_list에 삽입한다. 가장 빨리 일어나는 스레드의 tick도 변경함. 
+	wakeup_threads(ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

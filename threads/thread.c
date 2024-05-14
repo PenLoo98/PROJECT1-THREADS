@@ -1,4 +1,5 @@
 #include "threads/thread.h"
+#include <limits.h>
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
@@ -44,6 +45,11 @@ static struct list destruction_req;
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
+//가장 빨리 깨어나는 스레드의 시간 저장
+static long long fastest_wake_time;
+
+//자고 있는 스레드들을 저장해놓는 리스트 구현*/
+static struct list sleep_list;
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -63,6 +69,8 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 
+
+static void thread_set_wakeup(int64_t ticks);
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -71,6 +79,7 @@ static tid_t allocate_tid (void);
  * down to the start of a page.  Since `struct thread' is
  * always at the beginning of a page and the stack pointer is
  * somewhere in the middle, this locates the curent thread. */
+//현재 돌아가고 있는 스레드의 구조체를 반환한다는 것 같음.
 #define running_thread() ((struct thread *) (pg_round_down (rrsp ())))
 
 
@@ -92,6 +101,16 @@ static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
 
    It is not safe to call thread_current() until this function
    finishes. */
+   /*
+   스레드 시스템을 초기화 하기 위해 main()에서 호출된다.핀토스의 초기 스레드의
+   struct thread를 생성하기 위한 것이다. 초기의 스레드 스택을 페이지의 꼭대기에 
+   넣기 때문에 가능하다. 이것은 핀토스 로더가 초기 스레드의 스택을 다른 스레드와
+   마찬가지로 페이지 상단에 배치하기 때문에 가능하다.
+   */
+  /*
+  프로세스는 하나의 스레드와 항상 함께 생성된다.
+  초기 스레드 스택은 프로세스의 스택이다. 
+  */
 void
 thread_init (void) {
 	ASSERT (intr_get_level () == INTR_OFF);
@@ -107,10 +126,15 @@ thread_init (void) {
 
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
+	//스레드 대기 리스트 초기화
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	//스레드 슬립 리스트 초기화
+	list_init(&sleep_list);
 
-	/* Set up a thread structure for the running thread. */
+	fastest_wake_time = LONG_MAX;
+
+	/* S r the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
@@ -135,6 +159,7 @@ thread_start (void) {
 
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
+// 커널 틱을 증가시키고, 스레드가 차지한 시간이 지나면 넘어가기
 void
 thread_tick (void) {
 	struct thread *t = thread_current ();
@@ -161,6 +186,34 @@ thread_print_stats (void) {
 			idle_ticks, kernel_ticks, user_ticks);
 }
 
+//스레드의 깨어나는 시간을 설정하는 함수 인터럽트가 꺼저 있어야 한다.
+static void
+thread_set_wakeup(int64_t ticks){
+	struct thread* curr = thread_current();
+	curr->wakeup_tick = ticks;
+}
+
+/*현재 스레드가 idle thread가 아니라면, thread의 상태를 blokc으로 바꾸고,
+local tick을 저장하고 필요하다면 global tick 수정 그리고 sechdule()호출
+스레드 리스트에 삽입할 때 interrupt를 막아야 한다.
+*/
+void
+thread_sleep(int64_t ticks){
+	int64_t old_level = intr_disable();
+	struct thread* curr = thread_current();
+	if(curr != idle_thread){
+		thread_set_wakeup(ticks);
+		if(fastest_wake_time > ticks){
+			fastest_wake_time = ticks;
+		}
+		//sleep list에 삽입하고, context switching
+		list_push_back(&sleep_list,&(curr->elem));
+		//블록 상태로 만들고 컨텍스트 스위칭
+		thread_block();
+	}
+	intr_set_level(old_level);
+}
+
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
    and adds it to the ready queue.  Returns the thread identifier
@@ -177,6 +230,7 @@ thread_print_stats (void) {
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
    //스레드 구조체 메모리에 할당, 스레드 초기화, 스레스 함수, 유저 함수 지정, 스케줄러에 추가
+
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
@@ -217,6 +271,8 @@ thread_create (const char *name, int priority,
    This function must be called with interrupts turned off.  It
    is usually a better idea to use one of the synchronization
    primitives in synch.h. */
+   //현재 스레드를 잠들게 하니까 얘가 필요할 것 같다..
+   //thread state를 block으로 바꾸고, 컨텍스트 스위칭
 void
 thread_block (void) {
 	ASSERT (!intr_context ());
@@ -307,7 +363,7 @@ thread_yield (void) {
 	if (curr != idle_thread)
 		list_push_back (&ready_list, &curr->elem);
 	do_schedule (THREAD_READY);
-	intr_set_level (old_level);
+	intr_set_level (old_level); //켜준다.
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -320,6 +376,48 @@ thread_set_priority (int new_priority) {
 int
 thread_get_priority (void) {
 	return thread_current ()->priority;
+}
+
+long long
+get_fasted_wake_time(void){
+	return fastest_wake_time;
+}
+
+int64_t 
+thread_get_wakeup_tick(struct thread* thread){
+	return thread -> wakeup_tick;
+}
+
+void 
+thread_set_wakeup_tick(struct thread* thread,int64_t tick){
+	thread -> wakeup_tick = tick;
+}
+
+//시간이 지난 쓰레드를 깨운다. 인터럽트가 차단된 상태에서 실행되어야 한다.
+void
+wakeup_threads(int64_t os_tick){
+	struct list_elem* e;
+	if(fastest_wake_time>os_tick){
+		return;
+	}
+	int64_t fastest_wake_time_candidate = LONG_MAX;
+	for (e = list_begin (&sleep_list); e != list_end (&sleep_list); e = list_next (e)){
+		struct thread* cur = list_entry(e,struct thread, elem);
+		int64_t local_ticks = thread_get_wakeup_tick(cur);
+		if(local_ticks<=os_tick){
+			struct thread* before = list_entry(list_prev(e),struct thread, elem);
+			list_remove(e);
+			thread_unblock(cur);
+			e = &(before->elem);
+		}
+		//일어나지 않은 스레드 중 가장 빨리 끝나는 스레드 찾아야함.
+		else{
+			if(local_ticks<fastest_wake_time_candidate){
+				fastest_wake_time_candidate = local_ticks;
+			}
+		}
+	}
+	fastest_wake_time = fastest_wake_time_candidate;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -387,6 +485,7 @@ idle (void *idle_started_ UNUSED) {
 }
 
 /* Function used as the basis for a kernel thread. */
+//aux가 언제까지 실행되었는지에 대한 값 같다
 static void
 kernel_thread (thread_func *function, void *aux) {
 	ASSERT (function != NULL);
@@ -410,6 +509,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	strlcpy (t->name, name, sizeof t->name);
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
+	t->wakeup_tick = 0; /*일어날 시간 초기화*/
 	t->magic = THREAD_MAGIC;
 }
 
@@ -460,6 +560,8 @@ do_iret (struct intr_frame *tf) {
    At this function's invocation, we just switched from thread
    PREV, the new thread is already running, and interrupts are
    still disabled.
+   이 함수를 호출할 때 우리는 방금 스레드 PREV에서 전환했고,
+   새 스레드는 이미 실행중이며, 인터럽트는 여전히 비활성화 되어 있음.
 
    It's not safe to call printf() until the thread switch is
    complete.  In practice that means that printf()s should be
@@ -540,6 +642,8 @@ do_schedule(int status) {
 	schedule ();
 }
 
+// 현재 실행중인 스레드가 아닌 경우에만 schedule을 호출할 수 있음. 
+// status를 미리 바꾸어주고 schedule 호출
 static void
 schedule (void) {
 	struct thread *curr = running_thread ();
@@ -569,7 +673,7 @@ schedule (void) {
 		   schedule(). */
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
 			ASSERT (curr != next);
-			list_push_back (&destruction_req, &curr->elem);
+			list_push_back(&destruction_req, &curr->elem);
 		}
 
 		/* Before switching the thread, we first save the information
@@ -580,7 +684,7 @@ schedule (void) {
 
 /* Returns a tid to use for a new thread. */
 static tid_t
-allocate_tid (void) {
+allocate_tid (void) { 
 	static tid_t next_tid = 1;
 	tid_t tid;
 

@@ -103,7 +103,7 @@ Executing 'mlfqs-load-avg':
 (mlfqs-load-avg) end
 Execution of 'mlfqs-load-avg' complete.
 Timer: 18822 ticks
-Thread: 0 idle ticks, 18822 kernel ticks, 0 user ticks
-Console: 5430 characters output
+Thread: 6899 idle ticks, 11923 kernel ticks, 0 user ticks
+Console: 5433 characters output
 Keyboard: 0 keys pressed
 Powering off...

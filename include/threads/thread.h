@@ -91,6 +91,7 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
+	int64_t wakeup_tick;
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
@@ -136,11 +137,24 @@ void thread_yield (void);
 int thread_get_priority (void);
 void thread_set_priority (int);
 
+//fasted_wake_time을 반환하는 함수
+long long get_fasted_wake_time(void);
+
+//스레드를 언제 깨울지 저장하고 가져오는 함수
+int64_t thread_get_wakeup_tick(struct thread* thread);
+void thread_set_wakeup_tick(struct thread* thread,int64_t tick);
+
+//시간이 지난 쓰레드 깨우는 함수
+void wakeup_threads(int64_t os_tick);
+
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+//스레드를 블락 상태로 만들고 슬립 리스트에 넣어주고 컨텍스트 스위칭
+void thread_sleep(int64_t ticks);
 
 #endif /* threads/thread.h */

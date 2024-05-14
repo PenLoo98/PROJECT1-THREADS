@@ -16,7 +16,7 @@ Executing 'mlfqs-nice-2':
 (mlfqs-nice-2) end
 Execution of 'mlfqs-nice-2' complete.
 Timer: 4022 ticks
-Thread: 0 idle ticks, 4022 kernel ticks, 0 user ticks
-Console: 671 characters output
+Thread: 1000 idle ticks, 3022 kernel ticks, 0 user ticks
+Console: 674 characters output
 Keyboard: 0 keys pressed
 Powering off...

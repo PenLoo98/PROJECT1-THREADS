@@ -15,7 +15,7 @@ Executing 'priority-donate-one':
 (priority-donate-one) end
 Execution of 'priority-donate-one' complete.
 Timer: 22 ticks
-Thread: 0 idle ticks, 22 kernel ticks, 0 user ticks
+Thread: 0 idle ticks, 23 kernel ticks, 0 user ticks
 Console: 777 characters output
 Keyboard: 0 keys pressed
 Powering off...
