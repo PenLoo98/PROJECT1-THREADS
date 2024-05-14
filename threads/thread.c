@@ -28,6 +28,9 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+// sleep_list 선언
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -109,6 +112,8 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	//sleep_list도 초기화해주기
+	list_init(&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -409,6 +414,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	//wakeup_tick초기화 안해도 로직상 괜찮긴 한데 혹시몰라 해줌
+	t->wakeup_tick = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -587,4 +594,85 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+// idle쓰레드 아니면 wakeup_tick으로 기상시간 설정하고 sleep_list에 넣음
+void thread_sleep(int64_t wakeup_tick){
+
+	//현재 쓰레드 저장하고
+	struct thread* curr= thread_current();
+	//지금 쓰레드가 idle이면 아무것도 하지말고 끝
+	//idle_thread라는 전역변수사용이 찝찝하지만, 로직상 보호받으니까...
+	//새로 안 사실. 이 함수에서는 idle_thread에 접근가능하니까 괜찮다고 함. 헤더신경안써도된대
+	if(curr==idle_thread){
+
+		return;
+	}
+	//지금 쓰레드가 idle이 아니면
+	else if (curr!=idle_thread){
+		//일단 인터럽트 꺼주고
+		enum intr_level old_level = intr_disable();
+		//쓰레드에 잠깰시간 설정해주고
+		curr->wakeup_tick=wakeup_tick;
+		//쓰레드상태 blocked으로 바꾸고 ready_list에서 빼버리고 다음 쓰레드 실행시켜버림
+		// do_schedule(THREAD_BLOCKED);
+		//지금 쓰레드 sleep_list에  정렬하면서 넣기
+		list_push_ascending_order(&sleep_list,curr);
+		do_schedule(THREAD_BLOCKED);
+		//인터럽트 다시 원상복귀
+		intr_set_level(old_level);
+	}
+
+}
+
+
+// 오름차순으로 넣는 함수
+void list_push_ascending_order(struct list *list, struct thread* curr){
+	struct list_elem* e;
+	//앞쪽(head쪽) 찐 노드부터 순회 시작
+	for (e = list_begin (list); e != list_end (list); e = list_next (e)){
+		//현재 list_elem의 주인 thread 저장
+		struct thread* now_pointing = list_entry(e,struct thread,elem);
+		//만약 지금 보고있는 thread가 curr보다 일찍 깨면
+		if(now_pointing->wakeup_tick <= curr->wakeup_tick){
+			//e앞에 curr 집어넣음
+			list_insert(e,&curr->elem);
+			return;
+		}
+	}
+	//아무 노드도 없었거나 curr이 가장 일찍깨는경우는 맨뒤에
+	list_push_back(list,&curr->elem);
+}
+
+// 시간된 애들 깨우는 함수
+void thread_wakeup(int64_t ticks){
+	//sleep_list가 비었으면
+	if(list_empty(&sleep_list)){
+		//무시
+		return;
+	}
+	//가장 먼저 깰 노드(tail쪽 제일 끝놈)
+	struct list_elem* earliest_elem=list_back(&sleep_list);
+	struct thread * earliest_thread=list_entry(earliest_elem,struct thread,elem);
+	//가장 먼저 깰 노드가 일어날 시간이 지났으면
+	while (earliest_thread->wakeup_tick <=ticks){
+		//잠시 인터럽트 끄고
+		enum intr_level old_level = intr_disable();
+		//쓰레드 상태 ready로 바꾸고
+		earliest_thread->status = THREAD_READY;
+		//sleep_list에서 빼고
+		list_remove(earliest_elem);
+		//ready_list에 넣기
+		list_push_back(&ready_list,earliest_elem);
+		//sleep_list가 비었으면 끝
+		if(list_empty(&sleep_list)){
+			return;
+		}
+		//깨웠으니까 다음 earliset_elem으로 갱신
+		earliest_elem=list_back(&sleep_list);
+		//earliest_thread갱신
+		earliest_thread=list_entry(earliest_elem,struct thread,elem);
+		//인터럽트 원상복구
+		intr_set_level(old_level);
+	}
 }

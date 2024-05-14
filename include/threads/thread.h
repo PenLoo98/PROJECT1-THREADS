@@ -94,6 +94,8 @@ struct thread {
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+	//잠에서 깰 시간 
+	int64_t wakeup_tick;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -142,5 +144,12 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+//thread_sleep 함수 선언
+void thread_sleep(int64_t wakeup_tick);
+//list_push_ascending_order함수 선언
+void list_push_ascending_order(struct list *list, struct thread* curr);
+//thread_wakeup 함수 선언
+void thread_wakeup(int64_t ticks);
 
 #endif /* threads/thread.h */

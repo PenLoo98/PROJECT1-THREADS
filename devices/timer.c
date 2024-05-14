@@ -87,14 +87,14 @@ timer_elapsed (int64_t then) {
 	return timer_ticks () - then;
 }
 
-/* Suspends execution for approximately TICKS timer ticks. */
+//수면실 매커니즘을 이용한 구현
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
-
-	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	//깨는 시간 저장
+	int64_t wakeup_tick=start+ticks;
+	//idle같이 구현에 필요한 static변수들이 많아 캡슐화를 깨지않기 위해 thread.c에서 구현하고 호출하는식으로 변경
+	thread_sleep(wakeup_tick);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -125,6 +125,8 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
+	//인터럽트마다 자는시간 지난애들 깨우기
+	thread_wakeup(ticks);
 	thread_tick ();
 }
 
