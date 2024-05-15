@@ -151,5 +151,7 @@ void thread_sleep(int64_t wakeup_tick);
 void list_push_ascending_order(struct list *list, struct thread* curr);
 //thread_wakeup 함수 선언
 void thread_wakeup(int64_t ticks);
+//priority_less 함수 선언
+bool priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux);
 
 #endif /* threads/thread.h */

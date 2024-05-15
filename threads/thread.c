@@ -245,7 +245,9 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	// list_push_back (&ready_list, &t->elem);
+	// 레디리스트에 내림차순 정렬
+	list_insert_ordered(&ready_list,&t->elem,priority_cmp,NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -675,4 +677,9 @@ void thread_wakeup(int64_t ticks){
 		//인터럽트 원상복구
 		intr_set_level(old_level);
 	}
+}
+
+//a와 b priority 비교하는 함수 구현, 지금은 내림차순희망
+bool priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux){
+	return list_entry(a,struct thread,elem)->priority > list_entry(b,struct thread,elem)->priority;
 }
