@@ -28,6 +28,11 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of processes in THREAD_BLOCKED state, that is, processes
+	that are sleep to wait but */
+static struct list sleep_list; // blocked된 스레드를 저장하는 리스트
+static int64_t earliest_wakeup_time; // 가장 일찍 기상하는 시간
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -109,6 +114,7 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	list_init (&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
@@ -345,6 +351,82 @@ int
 thread_get_recent_cpu (void) {
 	/* TODO: Your implementation goes here */
 	return 0;
+}
+
+// get smaller value in list
+static bool get_earlier_time(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
+	const struct thread *a = list_entry(a_, struct thread, elem);
+	const struct thread *b = list_entry(b_, struct thread, elem);
+	return a->wakeup_tick < b->wakeup_tick;
+}
+
+
+// 깨울 스레드가 있는지 확인하고 있다면 깨운다.
+void
+check_thread_sleep_list(int64_t os_ticks){
+	// 스레드가 가장 일찍 일어나는 시간보다 운영체제 실행시간이 더 이른 경우 실행 종료를 한다.
+	if(os_ticks < earliest_wakeup_time){
+		return;
+	}
+	enum intr_level old_level=intr_disable(); // inturrupt 중단
+
+	// 깨어나야할 스레드를 탐색한다. 
+	// 만약 두 스레드가 동시에 깨어나야한다면 어떻게 할까?
+	// -> 그냥 둘 다 깨워주면 될듯?
+
+	struct list_elem *cur;
+	// 쓰레드를 순회하며 깨어날 스레드인지 확인한다.
+	for(cur=list_begin(&sleep_list); cur!=list_end(&sleep_list); cur=list_next(cur)){
+		struct thread *curThread = list_entry(cur, struct thread, elem);
+		int64_t curWakeupTime = curThread->wakeup_tick;
+		
+		// 깨어날 시간이 된 쓰레드인 경우
+		if(curWakeupTime <= os_ticks){
+			struct thread *before = list_entry(list_prev(cur), struct thread, elem);
+			list_remove(cur);
+			thread_unblock(curThread);
+			cur = &(before->elem); // 지워진 블록의 이전 블록으로 설정한다.
+		}
+	}
+
+	// sleep list에 남은 애들 중에서 가장 빠른 기상시간으로 갱신
+	if(!list_empty(&sleep_list)){
+		earliest_wakeup_time = list_entry(list_min(&sleep_list,get_earlier_time, NULL), struct thread, elem)->wakeup_tick;
+	}
+	// sleep list가 비어있다면
+	else{
+		earliest_wakeup_time = 9223372036854775807;
+	}
+	intr_set_level (old_level);	// interrupt 다시 실행
+}
+
+void 
+thread_sleep(int64_t ticks){
+	ASSERT (!intr_context ()); // 외부 인터럽트가 실행 중이면 중단
+
+	enum intr_level old_level=intr_disable(); // inturrupt 중단
+	struct thread *curr = thread_current ();
+	ASSERT(curr!=idle_thread); // idle쓰레드면 중단 
+
+	if(curr!=idle_thread){
+		curr->wakeup_tick = ticks; // 일어날 시간을 정해주기
+		
+		// sleep list에 넣기
+		if(earliest_wakeup_time==NULL){
+			earliest_wakeup_time = ticks;
+		}
+		else{
+			// 더 일찍 일어나야하는 스레드가 추가된다면 갱신해주기
+			earliest_wakeup_time = (earliest_wakeup_time < ticks? earliest_wakeup_time: ticks);
+		}
+
+		// list_push_back (&sleep_list, &curr->elem); // 그냥 삽입
+		list_insert_ordered(&sleep_list, &curr->elem, get_earlier_time, NULL); // 정렬해서 sleep list에 삽입
+		thread_block();	
+	}
+
+	intr_set_level (old_level);	// interrupt 다시 실행
+	
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
