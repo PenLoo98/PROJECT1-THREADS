@@ -8,7 +8,7 @@ Calibrating timer...  26,188,800 loops/s.
 Boot complete.
 Executing 'alarm-single':
 Kernel PANIC at ../../tests/threads/tests.c:60 in run_test(): no test named "alarm-single"
-Call stack: 0x8004213449 0x80042168f7 0x8004206636 0x8004206783 0x8004206120.
+Call stack: 0x8004213512 0x80042169c0 0x8004206636 0x8004206783 0x8004206120.
 The `backtrace' program can make call stacks useful.
 Read "Backtraces" in the "Debugging Tools" chapter
 of the Pintos documentation for more information.

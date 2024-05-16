@@ -209,8 +209,13 @@ thread_create (const char *name, int priority,
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
+	// printf("create 실행횟수 확인용\n");
 	/* Add to run queue. */
 	thread_unblock (t);
+	//만약 지금 실행중인 스레드보다 세면 양보
+	if(priority > thread_get_priority()){
+		thread_yield();
+	}
 
 	return tid;
 }
@@ -249,6 +254,10 @@ thread_unblock (struct thread *t) {
 	// 레디리스트에 내림차순 정렬
 	list_insert_ordered(&ready_list,&t->elem,priority_cmp,NULL);
 	t->status = THREAD_READY;
+	// 언블록해서 ready_list로 들어오는놈이 현재 실행중인 스레드보다 세면 yield
+	// if(t->priority > thread_current()->priority){
+	// 	thread_yield();
+	// }
 	intr_set_level (old_level);
 }
 
@@ -309,8 +318,10 @@ thread_yield (void) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
-	if (curr != idle_thread)
+	if (curr != idle_thread){
 		list_push_back (&ready_list, &curr->elem);
+		list_sort(&ready_list,priority_cmp,NULL);
+	}
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -319,6 +330,8 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	//굴러온돌이 박힌돌 빼는지 확인
+	test_max_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -583,6 +596,7 @@ schedule (void) {
 		 * of current running. */
 		thread_launch (next);
 	}
+	// printf("스케쥴 완료,curr:%d, next:%d, curr priority:%d, next priority:%d \n",curr->tid,next->tid,curr->priority,next->priority);
 }
 
 /* Returns a tid to use for a new thread. */
@@ -682,4 +696,19 @@ void thread_wakeup(int64_t ticks){
 //a와 b priority 비교하는 함수 구현, 지금은 내림차순희망
 bool priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux){
 	return list_entry(a,struct thread,elem)->priority > list_entry(b,struct thread,elem)->priority;
+}
+
+//지금도 여전히 가장 우선순위가 높은지 확인하고 아니면 선점당함
+test_max_priority(){
+	if (list_empty(&ready_list)) {
+		return;
+	}
+
+	int run_priority = thread_current()->priority;
+	struct list_elem *e = list_begin(&ready_list);
+	struct thread *t = list_entry(e, struct thread, elem);
+
+	if (t->priority > run_priority) {
+		thread_yield();
+	}
 }

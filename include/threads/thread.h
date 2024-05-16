@@ -154,4 +154,6 @@ void thread_wakeup(int64_t ticks);
 //priority_less 함수 선언
 bool priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux);
 
+void test_max_priority(void);
+
 #endif /* threads/thread.h */
