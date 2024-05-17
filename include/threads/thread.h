@@ -92,7 +92,10 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 	int64_t wakeup_tick;
-
+	int initial_priority;
+	struct list donations;
+	struct thread* wait_on_lock;
+	struct list_elem d_elem;
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
@@ -115,7 +118,7 @@ struct thread {
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
-void comapare_and_preemtion();
+void comapare_and_preemtion(void);
 
 void thread_init (void);
 void thread_start (void);
