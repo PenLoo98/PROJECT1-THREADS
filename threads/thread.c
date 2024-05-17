@@ -120,7 +120,7 @@ static bool biggerThan(const struct list_elem *a,const struct list_elem *b,void 
 }
 
 void
-comapare_and_preemtion(){
+comapare_and_preemtion(void){
 	if(thread_current()->priority < list_entry(list_begin(&ready_list),struct thread,elem)->priority){
 		thread_yield();
 	}
@@ -390,7 +390,15 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	struct thread* curr = thread_current();
-	curr ->priority = new_priority;
+	// curr -> priority = new_priority;
+	if(curr->priority == curr ->initial_priority){
+		curr -> priority = new_priority;
+		curr -> initial_priority = new_priority;
+	}
+	curr -> initial_priority = new_priority;
+
+	// curr ->priority = new_priority;
+	// curr ->initial_priority = new_priority;
 	//자신을 ready_list에 넣고 schedule호출
 	if(curr->priority < list_entry(list_begin(&ready_list),struct thread,elem)->priority){
 		thread_yield();
@@ -536,6 +544,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->priority = priority;
 	t->wakeup_tick = 0; /*일어날 시간 초기화*/
 	t->magic = THREAD_MAGIC;
+	t->initial_priority = priority;
+	//어떤 lock을 기다리고 있는지
+	t->wait_on_lock = NULL;
+	//도네이션 초기화
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
