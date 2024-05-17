@@ -34,6 +34,7 @@
 static bool is_sorted (struct list_elem *a, struct list_elem *b,
 		list_less_func *less, void *aux) UNUSED;
 
+
 /* Returns true if ELEM is a head, false otherwise. */
 static inline bool
 is_head (struct list_elem *elem) {
@@ -371,6 +372,9 @@ inplace_merge (struct list_elem *a0, struct list_elem *a1b0,
 	ASSERT (is_sorted (a1b0, b1, less, aux));
 
 	while (a0 != a1b0 && a1b0 != b1)
+	//내림 차순으로 정렬하기 위해서는 a1b0이 a0보다 작을때는 
+	//list_next(a0)를 호출해야한다.
+	//즉 내림 차순으로 정렬하기 위해서는 a1b0>a0일때는 true 반대는 false를 리턴해야한다.
 		if (!less (a1b0, a0, aux))
 			a0 = list_next (a0);
 		else {
@@ -433,6 +437,7 @@ list_insert_ordered (struct list *list, struct list_elem *elem,
 
 	for (e = list_begin (list); e != list_end (list); e = list_next (e))
 	//elem이 e보다 크다면 true, e가 elem보다 작다면 true
+	//오름차순 구현을 위해선 elem이 e가 elem보다 작으면 false
 		if (less (elem, e, aux))
 			break;
 	return list_insert (e, elem);
