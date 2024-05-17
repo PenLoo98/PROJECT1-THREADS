@@ -46,6 +46,12 @@ void cond_broadcast (struct condition *, struct lock *);
 #define barrier() asm volatile ("" : : : "memory")
 
 //컨디션용 쓰레드 정렬로직
+// bool cnd_priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux);
+
+void
+list_insert_this_thread_ordered (struct list *list, struct list_elem *elem,
+		list_less_func *less, void *aux);
+
 bool cnd_priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux);
 
 #endif /* threads/synch.h */

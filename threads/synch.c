@@ -291,9 +291,10 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
+	// list_push_back (&cond->waiters, &waiter.elem);
+	// 맞는위치에 삽입
+	list_insert_this_thread_ordered(&cond->waiters,&((&waiter)->elem),cnd_priority_cmp,NULL);
 	lock_release (lock);
-	list_sort(&cond->waiters, cnd_priority_cmp, NULL);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
 }
@@ -334,5 +335,27 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 //컨디션용 쓰레드 정렬로직
 bool cnd_priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux){
-	return list_entry(a,struct thread,elem)->priority > list_entry(b,struct thread,elem)->priority;
+	// a는 현스레드 새마_elem, b는 elem
+	struct list_elem* x;
+	x=list_begin(&list_entry(b,struct semaphore_elem,elem)->semaphore.waiters);
+	int64_t x_priority=list_entry(x,struct thread,elem)->priority;
+	return thread_current()->priority > x_priority;
+	// return list_entry(a,struct semaphore_elem,elem)->semaphore.waiters > list_begin(&list_entry(b,struct semaphore_elem,elem)->semaphore.waiters)
+}
+
+//현재의 쓰레드를 컨디션 대기열에 넣는 함수
+// list_insert_thread_ordered(대기열,현재스레드가 들어갈 세마_elem의 elem,대소비교함수,NULL);
+void
+list_insert_this_thread_ordered (struct list *list, struct list_elem *elem,
+		list_less_func *less, void *aux) {
+	struct list_elem *e;
+
+	ASSERT (list != NULL);
+	ASSERT (elem != NULL);
+	ASSERT (less != NULL);
+
+	for (e = list_begin (list); e != list_end (list); e = list_next (e))
+		if (less (elem, e, aux))
+			break;
+	return list_insert (e, elem);
 }
