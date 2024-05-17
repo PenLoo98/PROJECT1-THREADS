@@ -15,6 +15,7 @@
 #include "userprog/process.h"
 #endif
 
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -699,7 +700,7 @@ bool priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux)
 }
 
 //지금도 여전히 가장 우선순위가 높은지 확인하고 아니면 선점당함
-test_max_priority(){
+void test_max_priority(){
 	if (list_empty(&ready_list)) {
 		return;
 	}
