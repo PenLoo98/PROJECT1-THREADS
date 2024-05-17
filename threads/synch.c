@@ -125,7 +125,7 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-	// list_sort(&sema->waiters,biggerThan,NULL);
+	list_sort(&sema->waiters,biggerThan,NULL);
 	if (!list_empty (&sema->waiters))
 		thread_unblock (list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
@@ -211,7 +211,7 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
-	// enum intr_level older_level =  intr_disable();
+	enum intr_level older_level =  intr_disable();
 
 	//lock holder가 있다면 자기는 잠들고 우선순위를 전파해야됨.
 	//우선 순위를 전파했다면 lock holder는 자신을 lock 시킨 thread를 찾아서 우선 순위 전파
@@ -230,25 +230,24 @@ lock_acquire (struct lock *lock) {
 			list_remove(&element_to_thread(list_begin(waiters_of_sem))->d_elem);
 			list_push_back(&(lock->holder->donations),&cur->d_elem);
 		}
-		//나의 wait_on_lock을 지정해주고
-		cur->wait_on_lock = lock -> holder;
+		//나의 wait_on_lock을 지정해주고 여기서 wait on lock에 thead가 아니라 holder를 지정해야함
+		cur->wait_on_lock = lock;
 		//스레드가 lock holder에 비해 우선 순위가 높다면
 		//나의 우선 순위가 lock holder의 현재 우선 순위보다 크다면 lock_holder에게 넘기고
 		if(cur->priority > lock->holder->priority){
 			lock->holder->priority = cur->priority;
 			//nested_donation 진행
-			for(struct thread* lock_holder = lock->holder ; lock_holder=lock_holder->wait_on_lock;lock_holder==NULL){
+			for(struct lock* nextlock = lock ; nextlock = nextlock->holder->wait_on_lock ; nextlock!=NULL){
 				//만약 현재의 우선순위가 lock holder의 priority보다 작거나 같으면 전파할 필요 없음. 
-				if(lock_holder->priority >= cur->priority)
+				if(nextlock->holder->priority >= cur->priority)
 					break;
-				lock_holder->priority = cur->priority;
+				nextlock->holder->priority = cur->priority;
 			}
 		}
 	}
 	sema_down (&lock->semaphore);
 	thread_current()->wait_on_lock == NULL;
-	// intr_set_level(older_level);
-
+	intr_set_level(older_level);
 	lock->holder = thread_current ();
 }
 
@@ -295,22 +294,30 @@ lock_release (struct lock *lock) {
 	
 	// enum intr_level old_level = intr_disable();
 	lock->holder = NULL;
-	//lock을 버리면서 이 lock의 최대 값을 가지고 있던 스레드를 
-	//donations에서 제거 element_to_thread(list_begin(lock->semaphore.waiters))
-	// 함께 자신의 priority 수정(남은 donations과 initial priorty 비교)
+	//lock을 버리면서 도네이션 중 이 lock을 가지고 있던 스레드를 제거한다.
+	//donations에서 제거하면 도네이션의 최대값과 initial priority를 비교하여 
+	//가장 큰 값을 자신의 priority로 바꾼다.
 	struct list* sem_list = &(lock->semaphore.waiters);
 	//리스트가 비어있지 않다면 donations의 스레드가 waiters의 스레드 안에 들어있음.
 	if(!list_empty(sem_list)){
 		int initial_priority = thread_current()->initial_priority;
 
+		//제거할 스레드는 도네이션에 속한 리스트중 지금 락에 걸려 있는 스레드
+		//도네이션을 순회하면서 지금 lock에 걸린 
 		struct thread* thread_to_remove = element_to_thread(list_begin(&(lock->semaphore.waiters)));
 		list_remove(&(thread_to_remove->d_elem));
 		//donations의 리스트가 비어있지 않다면 최대 값을 뽑아서 initial priority와 비교해 큰 값 넣기
 		if(!list_empty(&thread_current()->donations)){
 			int dona_max = element_to_thread(list_max(&thread_current()->donations,donations_smaller_than,NULL))->priority;
 			if(dona_max>initial_priority){
-				thread_current() -> priority = dona_max;
+				thread_current()->priority = dona_max;
 			}
+			else{
+				thread_current()->priority = initial_priority;
+			}
+		}
+		else{
+			thread_current()->priority = initial_priority;
 		}
 	}
 	sema_up (&lock->semaphore);
