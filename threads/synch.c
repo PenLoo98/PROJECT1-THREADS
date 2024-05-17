@@ -67,6 +67,7 @@ sema_down (struct semaphore *sema) {
 	old_level = intr_disable ();
 	while (sema->value == 0) {
 		list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_sort(&sema->waiters, priority_cmp, NULL);
 		thread_block ();
 	}
 	sema->value--;
@@ -105,15 +106,23 @@ sema_try_down (struct semaphore *sema) {
 void
 sema_up (struct semaphore *sema) {
 	enum intr_level old_level;
-
+	//선점 구현위해 구조체 정의
+	struct thread *t;
 	ASSERT (sema != NULL);
-
+	
 	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
+	if (!list_empty (&sema->waiters)){
+		//언블락하는 스레드t에 저장
+		thread_unblock (t=list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
+	}
 	sema->value++;
 	intr_set_level (old_level);
+	//만약 언블락된스레드가 지금실행스레드보다 더 세다면
+	if(t->priority > thread_current()->priority){
+		//선점하기
+		thread_yield();
+	}
 }
 
 static void sema_test_helper (void *sema_);
@@ -284,6 +293,7 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	sema_init (&waiter.semaphore, 0);
 	list_push_back (&cond->waiters, &waiter.elem);
 	lock_release (lock);
+	list_sort(&cond->waiters, cnd_priority_cmp, NULL);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
 }
@@ -320,4 +330,9 @@ cond_broadcast (struct condition *cond, struct lock *lock) {
 
 	while (!list_empty (&cond->waiters))
 		cond_signal (cond, lock);
+}
+
+//컨디션용 쓰레드 정렬로직
+bool cnd_priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux){
+	return list_entry(a,struct thread,elem)->priority > list_entry(b,struct thread,elem)->priority;
 }
