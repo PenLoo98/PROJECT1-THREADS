@@ -396,7 +396,7 @@ thread_set_priority (int new_priority) {
 		curr -> initial_priority = new_priority;
 	}
 	curr -> initial_priority = new_priority;
-
+	list_sort(&ready_list,biggerThan,NULL);
 	// curr ->priority = new_priority;
 	// curr ->initial_priority = new_priority;
 	//자신을 ready_list에 넣고 schedule호출

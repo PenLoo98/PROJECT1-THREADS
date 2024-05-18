@@ -221,8 +221,13 @@ lock_acquire (struct lock *lock) {
 		//비어 있지 않은데 waiters에 있는 것들 보다 자신이 크다면 waiters의 가장 큰 값을 donations에서 지우고
 		//자신을 donations에 추가
 		struct list* waiters_of_sem = &(lock->semaphore.waiters);
-		if(list_empty(&(lock->semaphore.waiters))){
+		if(list_empty(waiters_of_sem)){
+			// msg("empty!!");
 			list_push_back(&(lock->holder->donations),&cur->d_elem);
+			// msg ("!!! %d",list_entry(list_begin(&(lock->holder->donations)),struct thread,d_elem)->priority);
+			// for (struct list_elem* e = list_begin (&(lock->holder->donations)); e != list_end (&thread_current()->donations); e = list_next (e)){
+			// 	msg ("!!! %d.",list_entry(e,struct thread,elem)->priority);
+			// }
 		}
 		//waiters의 가장 높은 우선순위보다 현재 스레드의 우선순위가 높으면  
 		else if(cur->priority >= element_to_thread(list_begin(waiters_of_sem))->priority){
@@ -237,7 +242,12 @@ lock_acquire (struct lock *lock) {
 		if(cur->priority > lock->holder->priority){
 			lock->holder->priority = cur->priority;
 			//nested_donation 진행
+			int depth = 0;
 			for(struct lock* nextlock = lock ; nextlock = nextlock->holder->wait_on_lock ; nextlock!=NULL){
+				if(depth==8){
+					break;
+				}
+				depth++;
 				//만약 현재의 우선순위가 lock holder의 priority보다 작거나 같으면 전파할 필요 없음. 
 				if(nextlock->holder->priority >= cur->priority)
 					break;
@@ -272,8 +282,8 @@ lock_try_acquire (struct lock *lock) {
 
 //donations에서 max를 찾기 위해 사용하는 함수
 static bool donations_smaller_than(const struct list_elem *a,const struct list_elem *b,void *aux){
-	struct thread* aThread = list_entry(a,struct thread,elem);
-	struct thread* bThread = list_entry(b,struct thread,elem);
+	struct thread* aThread = list_entry(a,struct thread,d_elem);
+	struct thread* bThread = list_entry(b,struct thread,d_elem);
 
 	int aPriority = aThread->priority;
 	int bPriority = bThread->priority;
@@ -292,7 +302,7 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 	
-	// enum intr_level old_level = intr_disable();
+	enum intr_level old_level = intr_disable();
 	lock->holder = NULL;
 	//lock을 버리면서 도네이션 중 이 lock을 가지고 있던 스레드를 제거한다.
 	//donations에서 제거하면 도네이션의 최대값과 initial priority를 비교하여 
@@ -308,7 +318,7 @@ lock_release (struct lock *lock) {
 		list_remove(&(thread_to_remove->d_elem));
 		//donations의 리스트가 비어있지 않다면 최대 값을 뽑아서 initial priority와 비교해 큰 값 넣기
 		if(!list_empty(&thread_current()->donations)){
-			int dona_max = element_to_thread(list_max(&thread_current()->donations,donations_smaller_than,NULL))->priority;
+			int dona_max = list_entry(list_max(&thread_current()->donations,donations_smaller_than,NULL),struct thread,d_elem)->priority;
 			if(dona_max>initial_priority){
 				thread_current()->priority = dona_max;
 			}
@@ -321,7 +331,7 @@ lock_release (struct lock *lock) {
 		}
 	}
 	sema_up (&lock->semaphore);
-	// intr_set_level(old_level);
+	intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
