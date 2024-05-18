@@ -61,6 +61,8 @@ a_thread_func (void *lock_)
 
   lock_acquire (lock);
   msg ("Thread a acquired lock a.");
+//   msg ("a thread should have priority %d.  Actual priority: %d.",
+//        PRI_DEFAULT, thread_get_priority ());
   lock_release (lock);
   msg ("Thread a finished.");
 }
@@ -72,6 +74,8 @@ b_thread_func (void *lock_)
 
   lock_acquire (lock);
   msg ("Thread b acquired lock b.");
+//   msg ("b thread should have priority %d.  Actual priority: %d.",
+//        PRI_DEFAULT, thread_get_priority ());
   lock_release (lock);
   msg ("Thread b finished.");
 }

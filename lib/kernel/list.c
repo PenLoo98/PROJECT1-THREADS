@@ -375,6 +375,8 @@ inplace_merge (struct list_elem *a0, struct list_elem *a1b0,
 	//내림 차순으로 정렬하기 위해서는 a1b0이 a0보다 작을때는 
 	//list_next(a0)를 호출해야한다.
 	//즉 내림 차순으로 정렬하기 위해서는 a1b0>a0일때는 true 반대는 false를 리턴해야한다.
+	//a0<a1b0 내림차순
+	//a0>a1b0 오름차순
 		if (!less (a1b0, a0, aux))
 			a0 = list_next (a0);
 		else {
