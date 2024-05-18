@@ -67,6 +67,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+static bool get_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -212,6 +213,8 @@ thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+	// 현재 실행 중인 스레드보다 우선순위가 높다면 교체
+	check_preemption();
 
 	return tid;
 }
@@ -246,7 +249,7 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, get_higher_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -309,7 +312,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, 
+		get_higher_priority, NULL);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -318,6 +322,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	check_preemption(); // 바뀐 우선순위가 ready_list의 최고 우선순위보다 낮으면 양도
 }
 
 /* Returns the current thread's priority. */
@@ -351,6 +356,22 @@ int
 thread_get_recent_cpu (void) {
 	/* TODO: Your implementation goes here */
 	return 0;
+}
+
+// ready_list에 최고 우선순위와 현재 실행 중인 스레드의 우선순위 확인
+void 
+check_preemption(void){
+	int highest_priority = list_entry(list_begin(&ready_list), struct thread, elem)->priority;
+	if(!list_empty(&ready_list) && highest_priority > thread_current()->priority){
+		thread_yield();
+	}
+}
+
+bool 
+get_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
+	const struct thread *a = list_entry(a_, struct thread, elem);
+	const struct thread *b = list_entry(b_, struct thread, elem);
+	return a->priority > b->priority;
 }
 
 // get smaller value in list
