@@ -31,7 +31,7 @@ static struct list ready_list;
 /* List of processes in THREAD_BLOCKED state, that is, processes
 	that are sleep to wait but */
 static struct list sleep_list; // blocked된 스레드를 저장하는 리스트
-static int64_t earliest_wakeup_time; // 가장 일찍 기상하는 시간
+static int64_t earliest_wakeup_time = 9223372036854775807; // 가장 일찍 기상하는 시간
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -68,6 +68,7 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 static bool get_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
+void check_preemption(void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -433,7 +434,7 @@ thread_sleep(int64_t ticks){
 		curr->wakeup_tick = ticks; // 일어날 시간을 정해주기
 		
 		// sleep list에 넣기
-		if(earliest_wakeup_time==NULL){
+		if(earliest_wakeup_time == 9223372036854775807){
 			earliest_wakeup_time = ticks;
 		}
 		else{
