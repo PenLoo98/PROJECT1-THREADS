@@ -69,6 +69,8 @@ static void schedule (void);
 static tid_t allocate_tid (void);
 static bool get_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
 void check_preemption(void);
+void check_thread_sleep_list(int64_t os_ticks);
+void thread_sleep(int64_t ticks);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -362,9 +364,11 @@ thread_get_recent_cpu (void) {
 // ready_list에 최고 우선순위와 현재 실행 중인 스레드의 우선순위 확인
 void 
 check_preemption(void){
-	int highest_priority = list_entry(list_begin(&ready_list), struct thread, elem)->priority;
-	if(!list_empty(&ready_list) && highest_priority > thread_current()->priority){
-		thread_yield();
+	if(!list_empty(&ready_list)){
+		int highest_priority = list_entry(list_begin(&ready_list), struct thread, elem)->priority;
+		if(highest_priority > thread_current()->priority){
+			thread_yield();
+		}
 	}
 }
 
