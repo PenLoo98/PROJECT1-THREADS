@@ -330,7 +330,14 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
+	/* --- pjt 1.2 priority donation --- */
+	//우선순위 바꾸기
 	thread_current ()->priority = new_priority;
+	//찐 우선순위 바꾸는걸로 수기
+	thread_current ()->init_priority = new_priority;
+	//우선순위 리프레시
+	refresh_priority();
+	/* --- pjt 1.2 priority donation --- */
 	//굴러온돌이 박힌돌 빼는지 확인
 	test_max_priority();
 }
@@ -432,6 +439,14 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->magic = THREAD_MAGIC;
 	//wakeup_tick초기화 안해도 로직상 괜찮긴 한데 혹시몰라 해줌
 	t->wakeup_tick = 0;
+	/*project 1.2:priority donation*/
+	//찐 priority 초기화
+	t->init_priority = priority;
+	//대기중인락은 아직 없으니 null초기화
+	t->wait_on_lock = NULL;
+	//도네리스트 초기화
+	list_init(&t->donations);
+	/*project 1.2:priority donation*/
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

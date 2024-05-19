@@ -92,6 +92,17 @@ struct thread {
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
 
+	/*project 1.2:priority donation*/
+	//찐 우선순위
+	int init_priority;
+	//우선순위 도네해준 애들 리스트
+	struct list donations;
+	//도네해줄때 쓰는 분신
+	struct list_elem donation_elem;
+	//내가 대기하고있는 락
+	struct lock* wait_on_lock;
+	/*project 1.2:priority donation*/
+
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 	//잠에서 깰 시간 

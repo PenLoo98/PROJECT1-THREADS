@@ -197,7 +197,24 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	/*project 1.2:priority donation*/
+	//만약 지금 락에 홀더가 있으면
+	//단순함을 위해 도네리스트에 대소비교 안하고 싹 다넣기로함
+	if(lock->holder !=NULL){
+		// 대기하고있는 락 설정하고
+		thread_current()->wait_on_lock = lock;
+		//대기열에 삽입
+		list_insert_ordered(&lock->holder->donations,&thread_current()->donation_elem,donation_priority_cmp,NULL);
+		//연쇄 기부
+		chaining_donate_priority();
+	}
+	/*project 1.2:priority donation*/
+
 	sema_down (&lock->semaphore);
+	/*project 1.2:priority donation*/
+	//이게 실행된단건 내가 살아나서 락을 쥐었다는거니까
+	thread_current()->wait_on_lock=NULL;
+	/*project 1.2:priority donation*/	
 	lock->holder = thread_current ();
 }
 
@@ -231,6 +248,12 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
+	/*project 1.2:priority donation*/
+	//락 대기열에 있던 애들 다 도네리스트에서 제거하기
+	remove_with_lock(lock);
+	//도네리스트 바뀌었으니까 우선순위 재조정
+	refresh_priority();
+	/*project 1.2:priority donation*/
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
@@ -358,4 +381,60 @@ list_insert_this_thread_ordered (struct list *list, struct list_elem *elem,
 		if (less (elem, e, aux))
 			break;
 	return list_insert (e, elem);
+}
+
+//도네이션 내림차순판단용 함수
+bool donation_priority_cmp(const struct list_elem *a,const struct list_elem *b,void *aux){
+	// a는 현스레드 새마_elem, b는 elem
+	return list_entry(a,struct thread,donation_elem)->priority > list_entry(b,struct thread,donation_elem)->priority;
+}
+
+//연쇄적으로 연결된 락들 우선순위 변경
+void chaining_donate_priority(void){
+	struct thread *cur = thread_current();
+	//체인라이트닝 끝날때까지
+	while(1){
+		//대기중인 락이 없거나 (이런일이 있을까 싶음) 락홀더가 나보다 세면
+		if((cur->wait_on_lock == NULL )||(cur->wait_on_lock ->holder->priority >= cur->priority)){
+			break;
+		}
+		//체인라이트닝 타고 들어간 내가 락홀더보다 세면
+		else if(cur->wait_on_lock ->holder->priority < cur->priority){
+			//락홀더 우선순위 업뎃
+			cur->wait_on_lock ->holder->priority = cur->priority;
+			cur = cur->wait_on_lock->holder;
+			//정렬도 해줘야될거같은데...
+		}
+	}
+}
+
+//락 대기열에 있던 애들 다 도네리스트에서 제거하기. 일단은 하나만
+void remove_with_lock(struct lock* lock){
+	struct list_elem *e;
+ 	struct thread *cur = thread_current ();
+
+  	for (e = list_begin (&cur->donations); e != list_end (&cur->donations); e = list_next (e)){
+		struct thread *t = list_entry (e, struct thread, donation_elem);
+		if (t->wait_on_lock == lock)
+		list_remove (&t->donation_elem);
+	}
+}
+
+//현재 스레드 우선순위 리프레시
+void refresh_priority(void){
+	//정렬 함 해주고(미리해줄거라 불필요할거같은데...)
+	list_sort (&thread_current()->donations, donation_priority_cmp, NULL);
+	// 도네리스트가 비지 않았다면
+	if(!list_empty(&thread_current()->donations)){
+		//도네리스트 짱이 내 찐 우선순위보다 세면
+		if(list_entry(list_begin(&thread_current()->donations),struct thread,donation_elem)->priority > thread_current()->init_priority){
+			//도네리스트 짱을 내 우선순위로
+			thread_current()->priority=list_entry(list_begin(&thread_current()->donations),struct thread,donation_elem)->priority ;
+		}
+		//아니면
+		else{
+			//찐 우선순위를 내 우선순위로
+			thread_current()->priority=thread_current()->init_priority;
+		}
+	}
 }
