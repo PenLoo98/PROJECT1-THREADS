@@ -1,9 +1,9 @@
 FAIL
-Kernel panic in run: PANIC at ../../tests/threads/tests.c:60 in run_test(): no test named "alarm-priority"
-Call stack: 0x8004213a9b 0x8004216f49 0x8004206636 0x8004206783 0x8004206120
+Kernel panic in run: PANIC at ../../threads/interrupt.c:361 in intr_handler(): Unexpected interrupt
+Call stack: 0x8004213aca 0x8004208b5c 0x8004208f0e 0x8004217d0b 0x8004207221
 Translation of call stack:
-0x0000008004213a9b: debug_panic (lib/kernel/debug.c:32)
-0x0000008004216f49: run_test (tests/threads/tests.c:61)
-0x0000008004206636: run_task (threads/init.c:252)
-0x0000008004206783: run_actions (threads/init.c:297)
-0x0000008004206120: main (threads/init.c:125)
+0x0000008004213aca: debug_panic (lib/kernel/debug.c:32)
+0x0000008004208b5c: intr_handler (threads/interrupt.c:365)
+0x0000008004208f0e: intr_entry (threads/intr-stubs.o:?)
+0x0000008004217d0b: alarm_priority_thread (tests/threads/alarm-priority.c:58)
+0x0000008004207221: kernel_thread (threads/thread.c:422)

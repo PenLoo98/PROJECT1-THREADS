@@ -404,6 +404,7 @@ void chaining_donate_priority(void){
 			cur->wait_on_lock ->holder->priority = cur->priority;
 			cur = cur->wait_on_lock->holder;
 			//정렬도 해줘야될거같은데...
+			list_sort (&thread_current()->donations, donation_priority_cmp, NULL);
 		}
 	}
 }
@@ -424,17 +425,14 @@ void remove_with_lock(struct lock* lock){
 void refresh_priority(void){
 	//정렬 함 해주고(미리해줄거라 불필요할거같은데...)
 	list_sort (&thread_current()->donations, donation_priority_cmp, NULL);
+	//찐 우선순위를 내 우선순위로
+	thread_current()->priority=thread_current()->init_priority;
 	// 도네리스트가 비지 않았다면
 	if(!list_empty(&thread_current()->donations)){
 		//도네리스트 짱이 내 찐 우선순위보다 세면
 		if(list_entry(list_begin(&thread_current()->donations),struct thread,donation_elem)->priority > thread_current()->init_priority){
 			//도네리스트 짱을 내 우선순위로
 			thread_current()->priority=list_entry(list_begin(&thread_current()->donations),struct thread,donation_elem)->priority ;
-		}
-		//아니면
-		else{
-			//찐 우선순위를 내 우선순위로
-			thread_current()->priority=thread_current()->init_priority;
 		}
 	}
 }

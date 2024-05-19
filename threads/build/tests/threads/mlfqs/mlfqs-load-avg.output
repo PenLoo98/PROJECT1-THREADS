@@ -4,14 +4,14 @@ Kernel command line: -q -mlfqs run mlfqs-load-avg
 Pintos booting with: 
 	base_mem: 0x0 ~ 0x9fc00 (Usable: 639 kB)
 	ext_mem: 0x100000 ~ 0x13e0000 (Usable: 19,328 kB)
-Calibrating timer...  26,188,800 loops/s.
+Calibrating timer...  21,273,600 loops/s.
 Boot complete.
 Executing 'mlfqs-load-avg':
 Kernel PANIC at ../../tests/threads/tests.c:60 in run_test(): no test named "mlfqs-load-avg"
-Call stack: 0x8004213a9b 0x8004216f49 0x8004206636 0x8004206783 0x8004206120.
+Call stack: 0x8004213aca 0x8004216f78 0x8004206636 0x8004206783 0x8004206120.
 The `backtrace' program can make call stacks useful.
 Read "Backtraces" in the "Debugging Tools" chapter
 of the Pintos documentation for more information.
-Timer: 21 ticks
-Thread: 1 idle ticks, 20 kernel ticks, 0 user ticks
+Timer: 27 ticks
+Thread: 1 idle ticks, 26 kernel ticks, 0 user ticks
 Console: 

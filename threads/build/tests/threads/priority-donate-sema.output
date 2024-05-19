@@ -7,11 +7,14 @@ Pintos booting with:
 Calibrating timer...  26,188,800 loops/s.
 Boot complete.
 Executing 'priority-donate-sema':
-Kernel PANIC at ../../tests/threads/tests.c:60 in run_test(): no test named "priority-donate-sema"
-Call stack: 0x8004213a9b 0x8004216f49 0x8004206636 0x8004206783 0x8004206120.
-The `backtrace' program can make call stacks useful.
-Read "Backtraces" in the "Debugging Tools" chapter
-of the Pintos documentation for more information.
-Timer: 23 ticks
-Thread: 0 idle ticks, 23 kernel ticks, 0 user ticks
-Console: 
+(priority-donate-sema) begin
+(priority-donate-sema) Thread L acquired lock.
+(priority-donate-sema) Thread M finished.
+(priority-donate-sema) Main thread finished.
+(priority-donate-sema) end
+Execution of 'priority-donate-sema' complete.
+Timer: 28 ticks
+Thread: 0 idle ticks, 29 kernel ticks, 0 user ticks
+Console: 590 characters output
+Keyboard: 0 keys pressed
+Powering off...
