@@ -67,10 +67,14 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+bool donations_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
 static bool get_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED);
 void check_preemption(void);
 void check_thread_sleep_list(int64_t os_ticks);
 void thread_sleep(int64_t ticks);
+void donate_priority(void);
+void remove_with_lock(struct lock *lock);
+void refresh_priority(void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -325,6 +329,9 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	thread_current ()->init_priority = new_priority;
+
+	refresh_priority();
 	check_preemption(); // 바뀐 우선순위가 ready_list의 최고 우선순위보다 낮으면 양도
 }
 
@@ -370,6 +377,13 @@ check_preemption(void){
 			thread_yield();
 		}
 	}
+}
+
+bool 
+donations_higher_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
+	const struct thread *a = list_entry(a_, struct thread, d_elem);
+	const struct thread *b = list_entry(b_, struct thread, d_elem);
+	return a->priority > b->priority;
 }
 
 bool 
@@ -517,6 +531,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	
+	// priority donation 관련 초기화
+	t->init_priority = priority;
+	t->wait_on_lock = NULL;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -695,4 +714,56 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+// lock holder보다 현재 스레드의 우선순위가 높다면 우선순위를 기부한다.
+void donate_priority(void){
+	struct thread *holder = thread_current()->wait_on_lock->holder;
+	for(int depth=0;depth<=8;depth++){
+		if(holder == NULL){
+			break;
+		}
+		holder->priority = thread_current()->priority;
+		if(holder->wait_on_lock == NULL){
+			break;
+		}
+		holder = holder->wait_on_lock->holder;
+	}
+}
+
+// donations 리스트에서 지울 lock을 찾아서 삭제한다.
+void remove_with_lock(struct lock *lock)
+{
+	/* donations 리스트에서 지울 lock을 찾아서 삭제한다. */
+	struct thread *curr = thread_current();
+	struct list_elem *e;
+	for(e = list_begin(&curr->donations); 
+		e != list_end(&curr->donations); e = list_next(e)){
+		struct thread *t = list_entry(e, struct thread, d_elem);
+		if(t->wait_on_lock == lock){
+			list_remove(e);
+		}
+	}
+}
+
+// donations 리스트를 확인하고 우선순위를 갱신한다.
+void refresh_priority(void)
+{
+	/* 기부받기 전의 우선순위로 초기화 */
+	thread_current()->priority = thread_current()->init_priority;
+
+	/* donations 리스트가 비어있지 않으면서 
+	더 높은 우선순위의 스레드가 있다면 현재 스레드에 donate해준다.*/
+	if (!list_empty(&thread_current()->donations))
+	{
+		struct thread *front_thread 
+			= list_entry(list_begin(&thread_current()->donations),
+												 struct thread,
+												 d_elem);
+
+		if (thread_current()->priority < front_thread->priority)
+		{
+			thread_current()->priority = front_thread->priority;
+		}
+	}
 }

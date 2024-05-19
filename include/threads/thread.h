@@ -96,6 +96,10 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 
 	int64_t wakeup_tick; // thread가 깨어날 시간
+	int init_priority; // thread의 초기 priority
+	struct lock *wait_on_lock; // thread가 기다리는 lock
+	struct list donations; // priority donation list
+	struct list_elem d_elem; // donation list element
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -144,5 +148,11 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+bool donations_higher_priority(const struct list_elem *a_, 
+			const struct list_elem *b_, void *aux UNUSED);
+void donate_priority(void);
+void remove_with_lock(struct lock *lock);
+void refresh_priority(void);
 
 #endif /* threads/thread.h */
