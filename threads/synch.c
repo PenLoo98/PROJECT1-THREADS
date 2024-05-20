@@ -223,7 +223,9 @@ lock_acquire (struct lock *lock) {
 		   donation 을 받은 스레드의 thread 구조체를 list로 관리한다. */
 		list_insert_ordered(&lock->holder->donations, &curr->d_elem, donations_higher_priority, NULL);
 		/* priority donation 수행하기 위해 donate_priority() 함수 호출 */
-		donate_priority();
+		if(!thread_mlfqs){
+			donate_priority();
+		}
 	}
 	
 	sema_down (&lock->semaphore);
@@ -264,8 +266,11 @@ lock_release (struct lock *lock) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	lock->holder = NULL;
-	remove_with_lock(lock);
-	refresh_priority();
+	// mlfqs 스케줄러 활성화시 priority 관련 코드 비활성화
+	if(!thread_mlfqs){
+		remove_with_lock(lock);
+		refresh_priority();
+	}
 	sema_up (&lock->semaphore);
 }
 

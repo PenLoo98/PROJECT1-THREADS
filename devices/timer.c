@@ -127,10 +127,25 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
-	check_thread_sleep_list(ticks);
-	// thread의 sleep_list를 어떻게 넘겨줄까?
-	// thread.c에서 check_thread_sleep_list에서 깨울 스레드를 깨워주고 
-	// check_thread_sleep_list 여기서 실행하자
+
+	/* mlfqs 스케줄러일 경우
+	   timer_interrupt 가 발생할때 마다 recuent_cpu 1증가, 
+	   1초마다 load_avg, recent_cpu, priority 재계산,
+	   매 4tick마다 priority 재계산 */
+	if (thread_mlfqs) {
+        mlfqs_increment();
+        if (timer_ticks() % 4 == 0)
+            mlfqs_recalc_priority();
+
+        if (timer_ticks() % 100 == 0) {
+            mlfqs_load_avg();
+            mlfqs_recalc_recent_cpu();
+        }
+    }
+	if (earliest_wakeup_time <= ticks) {
+		// sleep_list를 확인해서 깨워야 할 thread가 있는지 확인
+		check_thread_sleep_list(ticks);
+	}	
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

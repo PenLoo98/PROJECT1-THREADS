@@ -101,6 +101,10 @@ struct thread {
 	struct list donations; // priority donation list
 	struct list_elem d_elem; // donation list element
 
+	int nice; // 높은 수록 우선순위 낮아짐
+	int recent_cpu; // 최근에 얼마나 많은 CPU time을 사용했는지를 나타내는 변수
+	struct list_elem all_elem; // 모든 thread들을 관리하는 list
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -146,6 +150,13 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void mlfqs_priority (struct thread *t);
+void mlfqs_recent_cpu (struct thread *t);
+void mlfqs_load_avg (void);
+void mlfqs_increment (void);
+void mlfqs_recalc (void);
+int64_t earliest_wakeup_time;
 
 void do_iret (struct intr_frame *tf);
 
