@@ -10,16 +10,16 @@ Executing 'alarm-priority':
 (alarm-priority) begin
 (alarm-priority) Thread priority 30 woke up.
 (alarm-priority) Thread priority 29 woke up.
-Interrupt 0x0e (#PF Page-Fault Exception) at rip=8004209cfe
+Interrupt 0x0e (#PF Page-Fault Exception) at rip=8004209d24
  cr2=0000000000000018 error=               0
-rax 0000000000000000 rbx 00000000000001f0 rcx 0000000000000000 rdx 0000000000000002
-rsp 000000800423af60 rbp 000000800423af90 rsi 000000800423a030 rdi 0000000000000001
-rip 0000008004209cfe r8 000000800423af1c  r9 0000000000000000 r10 0000000000000000
+rax 0000000000000000 rbx 00000000000001ef rcx 0000000000000000 rdx 0000000000000002
+rsp 000000800423af60 rbp 000000800423af90 rsi 00000080042234b8 rdi 0000000000000001
+rip 0000008004209d24 r8 000000800423af1c  r9 0000000000000000 r10 0000000000000000
 r11 0000000000000000 r12 0000000000000000 r13 0000000000000000 r14 0000000000000000
 r15 0000000000000000 rflags 00000202
 es: 0010 ds: 0010 cs: 0008 ss: 0010
 Kernel PANIC at ../../threads/interrupt.c:361 in intr_handler(): Unexpected interrupt
-Call stack: 0x8004213aca 0x8004208b5c 0x8004208f0e 0x8004217d0b 0x8004207221.
+Call stack: 0x8004213ae8 0x8004208b5c 0x8004208f0e 0x8004217d29 0x8004207221.
 The `backtrace' program can make call stacks useful.
 Read "Backtraces" in the "Debugging Tools" chapter
 of the Pintos documentation for more information.

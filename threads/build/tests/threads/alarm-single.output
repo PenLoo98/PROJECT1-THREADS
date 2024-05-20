@@ -21,7 +21,7 @@ Executing 'alarm-single':
 (alarm-single) end
 Execution of 'alarm-single' complete.
 Timer: 296 ticks
-Thread: 249 idle ticks, 48 kernel ticks, 0 user ticks
+Thread: 251 idle ticks, 46 kernel ticks, 0 user ticks
 Console: 1026 characters output
 Keyboard: 0 keys pressed
 Powering off...

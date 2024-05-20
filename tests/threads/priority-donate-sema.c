@@ -63,7 +63,6 @@ static void
 m_thread_func (void *ls_) 
 {
   struct lock_and_sema *ls = ls_;
-
   sema_down (&ls->sema);
   msg ("Thread M finished.");
 }
@@ -72,7 +71,6 @@ static void
 h_thread_func (void *ls_) 
 {
   struct lock_and_sema *ls = ls_;
-
   lock_acquire (&ls->lock);
   msg ("Thread H acquired lock.");
 

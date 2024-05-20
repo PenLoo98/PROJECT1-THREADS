@@ -109,7 +109,10 @@ sema_up (struct semaphore *sema) {
 	//선점 구현위해 구조체 정의
 	struct thread *t;
 	ASSERT (sema != NULL);
-	
+	/*project 1.2:priority donation*/
+	//꺼낼때도 정렬한번하고 깨워야함
+	list_sort (&sema->waiters, priority_cmp, NULL);	
+	/*project 1.2:priority donation*/	
 	old_level = intr_disable ();
 	if (!list_empty (&sema->waiters)){
 		//언블락하는 스레드t에 저장
@@ -402,14 +405,14 @@ void chaining_donate_priority(void){
 		else if(cur->wait_on_lock ->holder->priority < cur->priority){
 			//락홀더 우선순위 업뎃
 			cur->wait_on_lock ->holder->priority = cur->priority;
-			cur = cur->wait_on_lock->holder;
 			//정렬도 해줘야될거같은데...
-			list_sort (&thread_current()->donations, donation_priority_cmp, NULL);
+			list_sort (&cur->donations, donation_priority_cmp, NULL);
+			cur = cur->wait_on_lock->holder;
 		}
 	}
 }
 
-//락 대기열에 있던 애들 다 도네리스트에서 제거하기. 일단은 하나만
+//락 대기열에 있던 애들 다 도네리스트에서 제거하기. (왜 하나만 하지...?)
 void remove_with_lock(struct lock* lock){
 	struct list_elem *e;
  	struct thread *cur = thread_current ();
