@@ -93,8 +93,9 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	if (timer_elapsed (start) < ticks){
+		thread_sleep(start+ticks);
+	}
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -126,6 +127,25 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+
+	/* mlfqs 스케줄러일 경우
+	   timer_interrupt 가 발생할때 마다 recuent_cpu 1증가, 
+	   1초마다 load_avg, recent_cpu, priority 재계산,
+	   매 4tick마다 priority 재계산 */
+	if (thread_mlfqs) {
+        mlfqs_increment();
+        if (timer_ticks() % 4 == 0)
+            mlfqs_recalc_priority();
+
+        if (timer_ticks() % 100 == 0) {
+            mlfqs_load_avg();
+            mlfqs_recalc_recent_cpu();
+        }
+    }
+	if (earliest_wakeup_time <= ticks) {
+		// sleep_list를 확인해서 깨워야 할 thread가 있는지 확인
+		check_thread_sleep_list(ticks);
+	}	
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

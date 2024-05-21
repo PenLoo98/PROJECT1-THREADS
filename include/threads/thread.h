@@ -95,6 +95,16 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	int64_t wakeup_tick; // thread가 깨어날 시간
+	int init_priority; // thread의 초기 priority
+	struct lock *wait_on_lock; // thread가 기다리는 lock
+	struct list donations; // priority donation list
+	struct list_elem d_elem; // donation list element
+
+	int nice; // 높은 수록 우선순위 낮아짐
+	int recent_cpu; // 최근에 얼마나 많은 CPU time을 사용했는지를 나타내는 변수
+	struct list_elem all_elem; // 모든 thread들을 관리하는 list
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -141,6 +151,19 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+void mlfqs_priority (struct thread *t);
+void mlfqs_recent_cpu (struct thread *t);
+void mlfqs_load_avg (void);
+void mlfqs_increment (void);
+void mlfqs_recalc (void);
+int64_t earliest_wakeup_time;
+
 void do_iret (struct intr_frame *tf);
+
+bool donations_higher_priority(const struct list_elem *a_, 
+			const struct list_elem *b_, void *aux UNUSED);
+void donate_priority(void);
+void remove_with_lock(struct lock *lock);
+void refresh_priority(void);
 
 #endif /* threads/thread.h */
