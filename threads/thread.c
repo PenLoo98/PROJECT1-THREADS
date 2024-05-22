@@ -322,17 +322,19 @@ thread_exit (void) {
    may be scheduled again immediately at the scheduler's whim. */
 void
 thread_yield (void) {
-	struct thread *curr = thread_current ();
-	enum intr_level old_level;
+	if(!intr_context()){
+		struct thread *curr = thread_current ();
+		enum intr_level old_level;
 
-	ASSERT (!intr_context ());
+		ASSERT (!intr_context ());
 
-	old_level = intr_disable ();
-	if (curr != idle_thread)
-		list_insert_ordered(&ready_list, &curr->elem, 
-		get_higher_priority, NULL);
-	do_schedule (THREAD_READY);
-	intr_set_level (old_level);
+		old_level = intr_disable ();
+		if (curr != idle_thread)
+			list_insert_ordered(&ready_list, &curr->elem, 
+			get_higher_priority, NULL);
+		do_schedule (THREAD_READY);
+		intr_set_level (old_level);
+	}
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
