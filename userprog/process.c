@@ -26,6 +26,7 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
+static void argument_stack(char** parse, int count, struct intr_frame* _if);
 
 /* General process initializer for initd and other process. */
 static void
@@ -38,8 +39,10 @@ process_init (void) {
  * before process_create_initd() returns. Returns the initd's
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
+/* 프로세스(스레드) 생성 함수를 호출하고 tid 리턴 
+ pdf의 process_execute와 같다.*/
 tid_t
-process_create_initd (const char *file_name) {
+process_create_initd (const char *file_name) { 
 	char *fn_copy;
 	tid_t tid;
 
@@ -48,8 +51,15 @@ process_create_initd (const char *file_name) {
 	fn_copy = palloc_get_page (0);
 	if (fn_copy == NULL)
 		return TID_ERROR;
+	// file_name을 fn_copy에 복사
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	// file_name 문자열 파싱
+	// file_name이 "args-single onearg"일 경우 "args-single"만을 file_name으로 저장
+	char *save_ptr;
+	file_name = strtok_r(file_name, " ", &save_ptr);
+
+	// initd에 fn_copy를 인자로 전달한다. 이때 fn_copy는 전체 입력 문자열을 가지고 있다.
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -161,7 +171,7 @@ error:
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
-process_exec (void *f_name) {
+process_exec (void *f_name) { // pdf의 start_process와 같다.
 	char *file_name = f_name;
 	bool success;
 
@@ -176,8 +186,27 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	/* 인자들 띄어쓰기 기준으로 토큰화 및 토큰의 개수 계산
+	char* file_name = "args-single one"에서 "args-single"과 "one"
+	2개의 토큰으로 분리되며 argc=2가 된다.
+	save_ptr는 인자들의 시작을 가리킨다.
+	parse에 입력값을 공백으로 분리해서 배열에 저장한다.*/
+	char *token, *save_ptr;
+	char* parse[128];
+	int argc = 0;
+	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL;
+			token = strtok_r(NULL, " ", &save_ptr)) {
+		parse[argc] = token;
+		argc++;
+	}
+
+	
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (parse[0], &_if);
+
+	/* 유저 스택에 인자를 저장 */
+	argument_stack(parse, argc, &_if);
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
@@ -204,6 +233,9 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+
+	while(1){};
+	
 	return -1;
 }
 
@@ -330,19 +362,20 @@ load (const char *file_name, struct intr_frame *if_) {
 	int i;
 
 	/* Allocate and activate page directory. */
-	t->pml4 = pml4_create ();
+	t->pml4 = pml4_create (); // 페이지 디렉토리 생성, pagedir=pml4
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());
+	process_activate (thread_current ()); // 페이지 테이블 활성화
 
 	/* Open executable file. */
-	file = filesys_open (file_name);
+	file = filesys_open (file_name); // 프로그램 파일 open
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
 
 	/* Read and verify executable header. */
+	// ELF 헤더 읽어서 저장
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
 			|| ehdr.e_type != 2
@@ -357,6 +390,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
 	for (i = 0; i < ehdr.e_phnum; i++) {
+		// 배치 정보를 읽어서 phdr 저장
 		struct Phdr phdr;
 
 		if (file_ofs < 0 || file_ofs > file_length (file))
@@ -397,6 +431,7 @@ load (const char *file_name, struct intr_frame *if_) {
 						read_bytes = 0;
 						zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
 					}
+					// 배치정보를 통해 세그먼트를 메모리에 로드
 					if (!load_segment (file, file_page, (void *) mem_page,
 								read_bytes, zero_bytes, writable))
 						goto done;
@@ -408,6 +443,7 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
+	// 스택 초기화
 	if (!setup_stack (if_))
 		goto done;
 
@@ -425,6 +461,43 @@ done:
 	return success;
 }
 
+/* 유저 스택에 파싱된 토큰을 저장하는 함수 구현*/
+static void
+argument_stack(char** argv, int argc, struct intr_frame* _if){
+	char *arg_address[128];
+
+	/* 인자들을 스택에 삽입*/
+	for(int i=argc-1;i>-1;i--){
+		//스택 주소 감소
+		int input_argv_length = strlen(argv[i])+1; // memcpy에서 종료문자"\0"까지 포함하기 위해 +1
+		_if->rsp -= input_argv_length;
+
+		// 스택 데이터 넣기
+		memcpy(_if->rsp, argv[i], input_argv_length); // rsp에 argv[i] 복사 (input_argv_length만큼)
+		arg_address[i] = _if->rsp; // arg_address[i]에 인자의 시작주소 저장
+	}
+
+	/* WORD 크기에 맞도록 8배수의 크기를 만족하는 padding 추가 */
+	int padding = (_if->rsp)%8; // rsp가 8의 배수가 되도록 padding 계산
+	for(int i=padding;i>=0;i--){
+		_if->rsp -= sizeof(char); // rsp를 1바이트씩 감소
+		*(uint8_t*)_if->rsp = 0; // 데이터 0을 넣어서 padding
+	}
+
+	/* 줄바꿈 문자(sentinel) "\n"를 포함한 문자열의 주소를 삽입 */
+	for(int i=argc-1;i>=0;i--){
+		_if->rsp -= sizeof(char*); // rsp를 8바이트씩 감소
+		*(char**)_if->rsp = arg_address[i]; // rsp에 arg_address[i] 저장
+	}
+
+	/* fake address 삽입: argv의 끝을 나타낸다. */
+	_if->rsp -= sizeof(char*); // rsp를 8바이트씩 감소
+	*(char**)_if->rsp = 0; // rsp에 0 저장
+
+	/* argv 주소 삽입 */
+	_if->R.rdi = argc; // Code Convention ABI에 따라 rdi에 argc 저장
+	_if->R.rsi = _if->rsp + sizeof(char*); // rsp에 저장된 주소를 rsi에 저장
+}
 
 /* Checks whether PHDR describes a valid, loadable segment in
  * FILE and returns true if so, false otherwise. */
