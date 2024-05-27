@@ -22,11 +22,15 @@
 #include "vm/vm.h"
 #endif
 
+#define WORD 8
+#define ROUND_TO_WORD(x) (((x/WORD)*WORD)+WORD)
+
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
-
+static void parse_command(char* file_name,char** parse,int* count);
+static void argument_stack(char** parse, int count,struct intr_frame* _if);
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -45,17 +49,26 @@ process_create_initd (const char *file_name) {
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
+	//로드와 경쟁상태가 발생함.
 	fn_copy = palloc_get_page (0);
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
-
+	//file_name으로 parsing한 것으로 넘기자.
+	char* save_ptr;
+	char* file_name_not_arg = strtok_r (file_name, " ", &save_ptr);
 	/* Create a new thread to execute FILE_NAME. */
-	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
+	//fn_copy는 aux로 매개변수 
+	int b= 0;
+	tid = thread_create (file_name_not_arg, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
 	return tid;
 }
+
+//process_create_initD과 다른 점은 무조건 기다리지 않는 것이다. 
+
+
 
 /* A thread function that launches first user process. */
 static void
@@ -65,7 +78,6 @@ initd (void *f_name) {
 #endif
 
 	process_init ();
-
 	if (process_exec (f_name) < 0)
 		PANIC("Fail to launch initd\n");
 	NOT_REACHED ();
@@ -158,38 +170,142 @@ error:
 	thread_exit ();
 }
 
+struct thread* 
+get_child_process(int pid){
+	struct list* child_list = &thread_current()->child_list;
+	struct list_elem* e;
+
+	for (e = list_begin (child_list); e != list_end (child_list); e = list_next (e)){
+		struct thread* child = list_entry(e,struct thread,child_elem);
+		if(child->tid == pid){
+			return child;
+		}
+	}
+	return NULL;
+}
+
+//자식 프로세스 제거 
+void 
+remove_child_process(struct thread* cp){
+	list_remove(&cp->child_elem);
+	palloc_free_page(cp);
+}
+
+//인자를 나누고 인자의 개수를 센다.
+static void 
+parse_command(char* file_name,char** parse,int* count){
+	*count = 0;
+	char* arg,* save_ptr;
+	for (arg = strtok_r (file_name, " ", &save_ptr); arg != NULL;
+   		arg = strtok_r (NULL, " ", &save_ptr)){
+		*parse = arg;
+		parse++;
+		(*count)++;
+   	}
+}
+
+//인자의 길이의 합을 4의 배수로 만들고, stack에 넣는다.
+static void
+argument_stack(char** parse, int count, struct intr_frame* _if){
+	//char들을 stack에 삽입
+	int total_length = 0;
+	// int arg_length;
+	//arg를 가르킬 포인터
+	char* arg_ptr[count];
+	for(int i = count-1;i>-1;i--){
+		for(int j= strlen(parse[i]);j>-1;j--){
+			//스택 주소 감소
+			_if->rsp = _if->rsp-sizeof(char);
+			//스택에 char 추가
+			*(char*)(_if->rsp) = parse[i][j];
+			total_length ++;
+		}
+		//stack에 추가해줄 인수 추가
+		arg_ptr[i] = _if->rsp;
+	}
+	
+	// word-align
+	int pad = (_if->rsp)%WORD;
+	for(int i=0;i<pad;i++){
+		_if->rsp -= sizeof(char);
+		*(uint8_t *)_if->rsp = 0;
+	}
+
+	//push address of arg to stack
+	_if->rsp = _if->rsp - sizeof(char *);
+	*(char**)_if->rsp = NULL;
+	for(int i=0;i<count;i++){
+		_if->rsp -= sizeof(char *);
+		//stack에 char*를 저장
+		*(char**)_if->rsp  = arg_ptr[i];
+	}
+	// for(int i=0;i<count;i++){
+	// 	_if->rsp -= sizeof(char *);
+	// 	//stack에 char*를 저장
+	// 	*(char**)_if->rsp  = arg_ptr[i];
+	// }
+
+	//char** argv에 넣어줄 매개변수
+	_if->R.rsi = _if->rsp;
+	//int argc에 넣어줄 변수
+	_if->R.rdi = count;
+
+	//fake return address
+	_if->rsp = _if->rsp - sizeof(void*);
+	*(void**)_if->rsp = NULL;
+}
+
+
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
 process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
-
+	int count = 0;
+	char* parse[128];
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
 	 * it stores the execution information to the member. */
+	//initialize intrupt stack
 	struct intr_frame _if;
 	_if.ds = _if.es = _if.ss = SEL_UDSEG;
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
+	// hex_dump(_if.rsp, _if.rsp, KERN_BASE - _if.rsp, true)
 
 	/* We first kill the current context */
+	//현재 프로세스의 resource를 반납한다.
 	process_cleanup ();
 
+	//태스크를 쪼갠 토큰들을 parse에 담고 개수를 count에 저장한다.
+	parse_command(f_name,parse,&count);
+
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load (parse[0], &_if);
+	//stack에 전달할 argument 삽입 
+	argument_stack(parse,count,&_if);
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+
+	//로드 완료시 부모 프로세스 실행 가능
+	sema_up(&thread_current()->load_sema);
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
-	if (!success)
+	if (!success){
+		thread_current()->is_memory_loaded = false;
 		return -1;
-
+	}
+	thread_current()->is_memory_loaded = false;
 	/* Start switched process. */
+	//로드한 내용들을 실행
+	//getting out of kernel
 	do_iret (&_if);
 	NOT_REACHED ();
 }
 
 
+//스레드가 죽기를 기다리고 죽으면 exit status를 return한다.
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
  * exception), returns -1.  If TID is invalid or if it was not a
@@ -199,23 +315,31 @@ process_exec (void *f_name) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
+// 직진 자식이 아니거나 다른 자식을 wait하고 있는 도중에는 wait함수를 호출할 수 없다.
 int
 process_wait (tid_t child_tid UNUSED) {
-	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
-	 * XXX:       to add infinite loop here before
-	 * XXX:       implementing the process_wait. */
-	return -1;
+	struct thread* child = get_child_process(child_tid);
+	//잘못된 자식을 호출할때는 오류를 잡는 것을 구현했으나 wait함수 구현x 해야됨 나중에...
+	if(child==NULL){
+		return -1;
+	}
+	//자식이 exit를 반환하면 sema에서 탈출
+	sema_down(&child->exit_sema);
+	int child_exit_stat = child->exit_stat;
+	//자식 프로세스 디스크립터 삭제하라는데 왜 하는지 모르겠음..
+	palloc_free_page(child);
+	return child_exit_stat;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
+//proecss가 exit할때 부모를 꺼내고 부모의 리스트에서 자신을 제거하고, 부모의 스레드 구조체에
+//자신의 argument 값을 전달한다.
 void
 process_exit (void) {
-	struct thread *curr = thread_current ();
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
-
 	process_cleanup ();
 }
 
@@ -309,8 +433,7 @@ struct ELF64_PHDR {
 /* Abbreviations */
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
-
-static bool setup_stack (struct intr_frame *if_);
+static bool setup_stack (struct intr_frame *if_) ;
 static bool validate_segment (const struct Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes,
@@ -408,10 +531,12 @@ load (const char *file_name, struct intr_frame *if_) {
 	}
 
 	/* Set up stack. */
+	//rsp에 스택포인터
 	if (!setup_stack (if_))
 		goto done;
 
 	/* Start address. */
+	//function entry point
 	if_->rip = ehdr.e_entry;
 
 	/* TODO: Your code goes here.
@@ -544,6 +669,7 @@ setup_stack (struct intr_frame *if_) {
 	if (kpage != NULL) {
 		success = install_page (((uint8_t *) USER_STACK) - PGSIZE, kpage, true);
 		if (success)
+		//kpage(kernel page를 채우는 것인가 보다.)
 			if_->rsp = USER_STACK;
 		else
 			palloc_free_page (kpage);
@@ -551,6 +677,8 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 
+// 사용자 가상 메모리 주소인 UPAGE를 KERNEL의 주소공간인 KPAGE로 mapping한 것을
+//page table에 추가한다.
 /* Adds a mapping from user virtual address UPAGE to kernel
  * virtual address KPAGE to the page table.
  * If WRITABLE is true, the user process may modify the page;
@@ -566,6 +694,8 @@ install_page (void *upage, void *kpage, bool writable) {
 
 	/* Verify that there's not already a page at that virtual
 	 * address, then map our page there. */
+	//user page는 없어야 하고 kernel page는 있어야 함.
+	//아마 kernel page의 page table로 mapping한다는 것인가?
 	return (pml4_get_page (t->pml4, upage) == NULL
 			&& pml4_set_page (t->pml4, upage, kpage, writable));
 }

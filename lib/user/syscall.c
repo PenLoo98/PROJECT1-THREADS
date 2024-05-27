@@ -6,7 +6,7 @@ __attribute__((always_inline))
 static __inline int64_t syscall (uint64_t num_, uint64_t a1_, uint64_t a2_,
 		uint64_t a3_, uint64_t a4_, uint64_t a5_, uint64_t a6_) {
 	int64_t ret;
-	register uint64_t *num asm ("rax") = (uint64_t *) num_;
+	register uint64_t *num asm ("rax") = (uint64_t *) num_; //number을 넣는 것과 같은 의미
 	register uint64_t *a1 asm ("rdi") = (uint64_t *) a1_;
 	register uint64_t *a2 asm ("rsi") = (uint64_t *) a2_;
 	register uint64_t *a3 asm ("rdx") = (uint64_t *) a3_;
@@ -15,15 +15,15 @@ static __inline int64_t syscall (uint64_t num_, uint64_t a1_, uint64_t a2_,
 	register uint64_t *a6 asm ("r9") = (uint64_t *) a6_;
 
 	__asm __volatile(
-			"mov %1, %%rax\n"
-			"mov %2, %%rdi\n"
-			"mov %3, %%rsi\n"
-			"mov %4, %%rdx\n"
+			"mov %1, %%rax\n" //시스템콜 번호를
+			"mov %2, %%rdi\n" //인자1
+			"mov %3, %%rsi\n" //인자2
+			"mov %4, %%rdx\n" 
 			"mov %5, %%r10\n"
 			"mov %6, %%r8\n"
 			"mov %7, %%r9\n"
-			"syscall\n"
-			: "=a" (ret)
+			"syscall\n" //인터럽트 벡터 테이블에 있는 시스템 콜 핸들러 호출
+			: "=a" (ret) //리턴할 값 저장하는 명령어
 			: "g" (num), "g" (a1), "g" (a2), "g" (a3), "g" (a4), "g" (a5), "g" (a6)
 			: "cc", "memory");
 	return ret;

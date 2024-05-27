@@ -69,7 +69,6 @@ int
 main (void) {
 	uint64_t mem_end;
 	char **argv;
-
 	/* Clear BSS and get machine's RAM size. */
 	bss_init ();
 
@@ -102,7 +101,9 @@ main (void) {
 	syscall_init ();
 #endif
 	/* Start thread scheduler and enable interrupts. */
+	printf("idle스레드 생성전!!\n");
 	thread_start ();
+	printf("idle스레드 생성!!\n");
 	serial_init_queue ();
 	timer_calibrate ();
 

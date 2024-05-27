@@ -5,6 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -105,6 +107,20 @@ struct thread {
 	int recent_cpu; // 최근에 얼마나 많은 CPU time을 사용했는지를 나타내는 변수
 	struct list_elem all_elem; // 모든 thread들을 관리하는 list
 
+	//부모 프로세스
+	struct thread* parent;
+	//자식 리스트
+	struct list child_list;
+	//자신이 자식이 되기 위한 구조체
+	struct list_elem child_elem;
+	//프로그램 메모리 적재 유무
+	bool is_memory_loaded;
+	//프로세스 종료 유무
+	bool is_exit;
+	struct semaphore exit_sema;
+	struct semaphore load_sema;
+	tid_t exit_stat;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -123,6 +139,7 @@ struct thread {
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
+
 
 void thread_init (void);
 void thread_start (void);

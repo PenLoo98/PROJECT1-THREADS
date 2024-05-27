@@ -199,6 +199,8 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
+   //create thread는 스레드를 만드는 것이기 때문에 만드는 주체는 부모 프로세스
+
 tid_t
 thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
@@ -227,11 +229,22 @@ thread_create (const char *name, int priority,
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
 
+	//부모 프로세스 등록과 함께 자식 스레드로 등록
+	t->parent = thread_current();
+	printf("THREAD_BLOCKED??%d!!!!!!\n",THREAD_BLOCKED);
+	printf("parrent thead state : %d !!!!!\n",t->parent->status);
+	printf("thead state : %d !!!!!\n",t->status);
+	list_push_back(&thread_current()->child_list,&t->child_elem);
+	
+	printf("thead state : %d !!!!!\n",t->status);
+	t->is_memory_loaded = false;
+	t->is_exit = false;
+	sema_init(&t->exit_sema,0);
+	sema_init(&t->load_sema,0);
 	/* Add to run queue. */
 	thread_unblock (t);
 	// 현재 실행 중인 스레드보다 우선순위가 높다면 교체
 	check_preemption();
-
 	return tid;
 }
 
@@ -302,6 +315,7 @@ thread_tid (void) {
 
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
+//유저프로그램이 이것을 호출한 경우 process_exit()를 호출한다.
 void
 thread_exit (void) {
 	ASSERT (!intr_context ());
@@ -309,11 +323,19 @@ thread_exit (void) {
 #ifdef USERPROG
 	process_exit ();
 #endif
-
 	/* Just set our status to dying and schedule another process.
 	   We will be destroyed during the call to schedule_tail(). */
+	
+	//tail 함수 존재하지도 않는데 뭔소리지?...
+
+	//부모가 자식의 종료 상태를 알아야 하기 때문에 destruction에서 제거하지 않는다.
+	//대신 부모가 자식을 제거할 것이다.
 	intr_disable ();
 	list_remove(&thread_current()->all_elem);
+	struct thread *curr = thread_current ();
+	curr->is_exit = true;
+	sema_up(&curr->exit_sema);
+
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
 }
@@ -322,17 +344,19 @@ thread_exit (void) {
    may be scheduled again immediately at the scheduler's whim. */
 void
 thread_yield (void) {
-	struct thread *curr = thread_current ();
-	enum intr_level old_level;
+	if(!intr_context()){
+		struct thread *curr = thread_current ();
+		enum intr_level old_level;
 
-	ASSERT (!intr_context ());
+		ASSERT (!intr_context ());
 
-	old_level = intr_disable ();
-	if (curr != idle_thread)
-		list_insert_ordered(&ready_list, &curr->elem, 
-		get_higher_priority, NULL);
-	do_schedule (THREAD_READY);
-	intr_set_level (old_level);
+		old_level = intr_disable ();
+		if (curr != idle_thread)
+			list_insert_ordered(&ready_list, &curr->elem, 
+			get_higher_priority, NULL);
+		do_schedule (THREAD_READY);
+		intr_set_level (old_level);
+	}
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -414,6 +438,7 @@ thread_get_recent_cpu (void) {
 // ready_list에 최고 우선순위와 현재 실행 중인 스레드의 우선순위 확인
 void 
 check_preemption(void){
+	// msg("inter cont %d\n",intr_context());
 	if(!list_empty(&ready_list)){
 		int highest_priority = list_entry(list_begin(&ready_list), struct thread, elem)->priority;
 		if(highest_priority > thread_current()->priority){
@@ -564,6 +589,7 @@ kernel_thread (thread_func *function, void *aux) {
    NAME. */
 static void
 init_thread (struct thread *t, const char *name, int priority) {
+	printf("초기화 진입!!\n");
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
@@ -584,8 +610,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->nice = NICE_DEFAULT; // 초기값 0
 	t->recent_cpu = RECENT_CPU_DEFAULT; // 초기값 0
 
+	//자식 리스트 초기화
+	list_init(&t->child_list);
 	// all_list에 추가
 	list_push_back(&all_list, &t->all_elem);
+	printf("초기화 성공!!\n");
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
