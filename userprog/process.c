@@ -26,7 +26,8 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
-static void argument_stack(char** parse, int count, struct intr_frame* _if);
+void argument_stack(char** argv, int argc, void **rsp);
+struct thread *get_child_process(int pid);
 
 /* General process initializer for initd and other process. */
 static void
@@ -57,10 +58,10 @@ process_create_initd (const char *file_name) {
 	// file_name 문자열 파싱
 	// file_name이 "args-single onearg"일 경우 "args-single"만을 file_name으로 저장
 	char *save_ptr;
-	file_name = strtok_r(file_name, " ", &save_ptr);
+	strtok_r(file_name, " ", &save_ptr);
 
-	// initd에 fn_copy를 인자로 전달한다. 이때 fn_copy는 전체 입력 문자열을 가지고 있다.
 	/* Create a new thread to execute FILE_NAME. */
+	// initd에 fn_copy를 인자로 전달한다. 이때 fn_copy는 전체 입력 문자열을 가지고 있다.
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
@@ -85,9 +86,23 @@ initd (void *f_name) {
  * TID_ERROR if the thread cannot be created. */
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
+	struct thread *cur = thread_current();
+    memcpy(&cur->parent_if, if_, sizeof(struct intr_frame));
+
 	/* Clone current thread to new thread.*/
-	return thread_create (name,
-			PRI_DEFAULT, __do_fork, thread_current ());
+	// 현재 스레드를 fork한 new 스레드를 생성한다.
+	tid_t tid = thread_create(name, PRI_DEFAULT, __do_fork, cur);
+	if (tid == TID_ERROR)
+		return TID_ERROR;
+	
+	// 방금 생성한 자식 스레드를 찾기
+	struct thread *child_thread = get_child_process(tid);
+
+	// 자식 스레드가 로드가 완료될 때까지 대기
+	sema_down(&child_thread->load_sema);
+
+	// 자식 프로세스의 pid 반환
+	return tid;
 }
 
 #ifndef VM
@@ -102,21 +117,36 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
+	if (is_kernel_vaddr (va)){
+		return true;
+	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
+	if (parent_page == NULL) {
+		/* The page is not present in the parent's address space,
+		 * so it should be also not present in the child's address space. */
+		return false;
+	}
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
+	newpage = palloc_get_page (PAL_USER | PAL_ZERO);
+	if (newpage == NULL) {
+		return false;
+	}
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
+	memcpy (newpage, parent_page, PGSIZE);
+	writable = is_writable (pte);
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
+		return false;
 	}
 	return true;
 }
@@ -132,11 +162,12 @@ __do_fork (void *aux) {
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
-	struct intr_frame *parent_if;
+	struct intr_frame *parent_if = &parent->parent_if;
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	if_.R.rax = 0;
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
@@ -159,12 +190,28 @@ __do_fork (void *aux) {
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
 
+	// 파일 디스크립터 테이블 복사
+	// PintOS에서 프로세스가 사용할 수 있는 파일 디스크립터 최대 개수는 128
+	for (int i = 0; i < 128; i++)
+    {
+        struct file *file = parent->fd_table[i];
+        if (file == NULL)
+            continue;
+        if (file > 2)
+            file = file_duplicate(file);
+        current->fd_table[i] = file;
+    }
+	current->next_fd = parent->next_fd; // next_fd 복사
+
+	// 로드가 완료되면 부모 스레드에게 알림
+	sema_up(&current->load_sema);
 	process_init ();
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
 		do_iret (&if_);
 error:
+	sema_up(&current->load_sema);
 	thread_exit ();
 }
 
@@ -186,27 +233,23 @@ process_exec (void *f_name) { // pdf의 start_process와 같다.
 	/* We first kill the current context */
 	process_cleanup ();
 
-	/* 인자들 띄어쓰기 기준으로 토큰화 및 토큰의 개수 계산
-	char* file_name = "args-single one"에서 "args-single"과 "one"
-	2개의 토큰으로 분리되며 argc=2가 된다.
-	save_ptr는 인자들의 시작을 가리킨다.
-	parse에 입력값을 공백으로 분리해서 배열에 저장한다.*/
-	char *token, *save_ptr;
-	char* parse[128];
-	int argc = 0;
-	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL;
-			token = strtok_r(NULL, " ", &save_ptr)) {
-		parse[argc] = token;
-		argc++;
+	// Argument Passing ~
+    char *argv[64];
+    char *token, *save_ptr;
+    int argc = 0;
+    for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)){
+        argv[argc++] = token;
 	}
-
+    // ~ Argument Passing
 	
 	/* And then load the binary */
-	success = load (parse[0], &_if);
+	success = load (file_name, &_if); 
 
-	/* 유저 스택에 인자를 저장 */
-	argument_stack(parse, argc, &_if);
-	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
+	argument_stack(argv, argc, &_if.rsp);
+	_if.R.rdi = argc;
+	_if.R.rsi = (char *)_if.rsp + 8;
+
+	// hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
@@ -234,21 +277,37 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
 
-	while(1){};
-	
-	return -1;
+	struct thread *child_thread = get_child_process(child_tid);
+	// 자식 스레드가 없으면 -1 리턴
+	if (child_thread == NULL){
+		return -1;
+	}
+	sema_down(&child_thread->wait_sema); // 자식이 종료될 때까지 대기
+	list_remove(&child_thread->child_elem); // 자식 리스트에서 제거
+	sema_up(&child_thread->exit_sema); // 자식 스레드가 종료되었음을 부모 스레드에게 알림
+	return child_thread->exit_status; // 자식 스레드의 종료 상태 반환
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
-	struct thread *curr = thread_current ();
+	struct thread *curr_thread = thread_current ();
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
+	// FDT의 모든 파일을 닫고 메모리를 반환
+	for (int i = 2; i < 128; i++){
+		close(i);
+	}
+	palloc_free_page(curr_thread->fd_table);
+	file_close (curr_thread->running_file); // 실행 중인 파일 닫기
+
 	process_cleanup ();
+
+	sema_up(&curr_thread->wait_sema); // 부모 스레드가 대기하고 있을 경우 깨움
+	sema_down(&curr_thread->exit_sema); // 자식 스레드가 종료될 때까지 대기
 }
 
 /* Free the current process's resources. */
@@ -457,46 +516,93 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	// file_close (file); // 파일을 열어놔야 프로그램 실행동안 쓰기 작업이 블록된다.
 	return success;
 }
 
 /* 유저 스택에 파싱된 토큰을 저장하는 함수 구현*/
-static void
-argument_stack(char** argv, int argc, struct intr_frame* _if){
-	char *arg_address[128];
+void
+argument_stack(char** argv, int argc, void **rsp){
+	// 프로그램 이름, 인자 문자열 push
+    for (int i = argc - 1; i > -1; i--){
+        for (int j = strlen(argv[i]); j > -1; j--){
+            (*rsp)--;                      // 스택 주소 감소
+            **(char **)rsp = argv[i][j]; // 주소에 문자 저장
+        }
+        argv[i] = *(char **)rsp; // parse[i]에 현재 rsp의 값 저장해둠(지금 저장한 인자가 시작하는 주소값)
+    }
 
-	/* 인자들을 스택에 삽입*/
-	for(int i=argc-1;i>-1;i--){
-		//스택 주소 감소
-		int input_argv_length = strlen(argv[i])+1; // memcpy에서 종료문자"\0"까지 포함하기 위해 +1
-		_if->rsp -= input_argv_length;
+    // 정렬 패딩 push
+    int padding = (int)*rsp % 8;
+    for (int i = 0; i < padding; i++){
+        (*rsp)--;
+        **(uint8_t **)rsp = 0; // rsp 직전까지 값 채움
+    }
 
-		// 스택 데이터 넣기
-		memcpy(_if->rsp, argv[i], input_argv_length); // rsp에 argv[i] 복사 (input_argv_length만큼)
-		arg_address[i] = _if->rsp; // arg_address[i]에 인자의 시작주소 저장
+    // 인자 문자열 종료를 나타내는 0 push
+    (*rsp) -= 8;
+    **(char ***)rsp = 0; // char* 타입의 0 추가
+
+    // 각 인자 문자열의 주소 push
+    for (int i = argc - 1; i > -1; i--){
+        (*rsp) -= 8; // 다음 주소로 이동
+        **(char ***)rsp = argv[i]; // char* 타입의 주소 추가
+    }
+
+    // return address push
+    (*rsp) -= 8;
+    **(void ***)rsp = 0; // void* 타입의 0 추가
+}
+
+// 자식 리스트에서 원하는 프로세스를 검색하는 함수
+struct thread *get_child_process(int pid)
+{
+    /* 자식 리스트에 접근하여 프로세스 디스크립터 검색 */
+    struct thread *cur = thread_current();
+    struct list *child_list = &cur->child_list;
+    for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e))
+    {
+        struct thread *t = list_entry(e, struct thread, child_elem);
+        /* 해당 pid가 존재하면 프로세스 디스크립터 반환 */
+        if (t->tid == pid)
+            return t;
+    }
+    /* 리스트에 존재하지 않으면 NULL 리턴 */
+    return NULL;
+}
+
+int process_add_file(struct file *f)
+{
+	struct thread *cur = thread_current();
+	struct file **fd_table = cur->fd_table;
+
+	while(cur->next_fd < 128 && fd_table[cur->next_fd]){
+		cur->next_fd++;
 	}
-
-	/* WORD 크기에 맞도록 8배수의 크기를 만족하는 padding 추가 */
-	int padding = (_if->rsp)%8; // rsp가 8의 배수가 되도록 padding 계산
-	for(int i=padding;i>=0;i--){
-		_if->rsp -= sizeof(char); // rsp를 1바이트씩 감소
-		*(uint8_t*)_if->rsp = 0; // 데이터 0을 넣어서 padding
+	if(cur->next_fd < 128 && fd_table[cur->next_fd]){
+		return -1;
 	}
+	fd_table[cur->next_fd] = f;
 
-	/* 줄바꿈 문자(sentinel) "\n"를 포함한 문자열의 주소를 삽입 */
-	for(int i=argc-1;i>=0;i--){
-		_if->rsp -= sizeof(char*); // rsp를 8바이트씩 감소
-		*(char**)_if->rsp = arg_address[i]; // rsp에 arg_address[i] 저장
+	return cur->next_fd;
+}
+
+struct file *process_get_file(int fd){
+	struct thread *cur = thread_current();
+	struct file **fd_table = cur->fd_table;
+	if (fd < 2 || fd >= 128){
+		return NULL;
 	}
+	return fd_table[fd];
+}
 
-	/* fake address 삽입: argv의 끝을 나타낸다. */
-	_if->rsp -= sizeof(char*); // rsp를 8바이트씩 감소
-	*(char**)_if->rsp = 0; // rsp에 0 저장
-
-	/* argv 주소 삽입 */
-	_if->R.rdi = argc; // Code Convention ABI에 따라 rdi에 argc 저장
-	_if->R.rsi = _if->rsp + sizeof(char*); // rsp에 저장된 주소를 rsi에 저장
+void process_close_file(int fd){
+	struct thread *cur = thread_current();
+	struct file **fd_table = cur->fd_table;
+	if (fd < 2 || fd >= 128){
+		return NULL;
+	}
+	fd_table[fd] = NULL;
 }
 
 /* Checks whether PHDR describes a valid, loadable segment in

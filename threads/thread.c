@@ -135,6 +135,7 @@ thread_init (void) {
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
+	// list_push_back(&all_list, &initial_thread->all_elem);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
 }
@@ -226,6 +227,24 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+
+	/* 파일 시스템 */
+	t->parent = thread_current();
+	sema_init(&t->exit_sema, 0);
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->load_sema, 0);
+
+	// 현재 스레드의 자식으로 추가 
+	list_push_back(&thread_current()->child_list, &t->child_elem);
+
+	t->fd_table = palloc_get_page(0);
+	if (t->fd_table == NULL) {
+		return TID_ERROR;
+	}
+
+	t->fd_table[0] = 1;
+	t->fd_table[1] = 2;
+	t->next_fd = 2;
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -588,6 +607,15 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	// all_list에 추가
 	list_push_back(&all_list, &t->all_elem);
+
+	// syscalls 관련 초기화
+	list_init(&t->child_list);
+	sema_init(&t->exit_sema, 0);
+	sema_init(&t->wait_sema, 0);
+
+	// file system 관련 초기화
+	t->next_fd = 2; // 0, 1은 stdin, stdout이므로 2부터 시작
+	t->running_file = NULL;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

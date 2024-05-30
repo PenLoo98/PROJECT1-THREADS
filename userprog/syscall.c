@@ -7,7 +7,11 @@
 #include "userprog/gdt.h"
 #include "threads/flags.h"
 #include "intrinsic.h"
-#include <filesys/filesys.h>
+
+// USERPROG 추가
+#include "threads/palloc.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -15,8 +19,18 @@ void check_address(void *addr);
 void get_argument(void *rsp, int *arg, int count);
 void halt(void);
 void exit(int status);
+int fork (const char *thread_name, struct intr_frame *f);
+int exec (const char *cmd_line);
+int wait (int pid);
 bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
+int open(const char *file);
+int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);
+int write(int fd, const void *buffer, unsigned size);
+void seek(int fd, unsigned position);
+unsigned tell(int fd);
+void close(int fd);
 
 /* System call.
  *
@@ -50,13 +64,64 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
-	thread_exit ();
+	// printf("system call!\n");
+	// thread_exit();
+	int syscall_num = f->R.rax;
+	switch (syscall_num) {
+		case SYS_HALT:
+			halt();
+			break;
+		case SYS_EXIT:
+			exit(f->R.rdi);
+			break;
+		case SYS_FORK:
+			f->R.rax = fork(f->R.rdi, f);
+			break;
+		case SYS_EXEC:
+			f->R.rax = exec(f->R.rdi);
+			break;
+		case SYS_WAIT:
+			f->R.rax = wait(f->R.rdi);
+			break; 
+		case SYS_CREATE:
+			f->R.rax = create(f->R.rdi, f->R.rsi);
+			break;
+		case SYS_REMOVE:
+			f->R.rax = remove(f->R.rdi);
+			break;
+		case SYS_OPEN:
+			f->R.rax = open(f->R.rdi);
+			break;
+		case SYS_FILESIZE:
+			f->R.rax = filesize(f->R.rdi);
+			break;
+		case SYS_READ:
+			f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
+			break;  
+		case SYS_WRITE:      
+			f->R.rax = write(f->R.rdi, f->R.rsi, f->R.rdx);
+			break;
+		case SYS_SEEK:
+			seek(f->R.rdi, f->R.rsi);
+			break;
+		case SYS_TELL:
+			f->R.rax = tell(f->R.rdi);
+			break;
+		case SYS_CLOSE:
+			close(f->R.rdi);
+			break;
+		default:
+			exit(-1);
+			break;
+  	}
 }
 
 /* 주소유효성 검사: 포인터가 가리키는 주소가 사용자 영역에 속해있는지 확인*/
 void check_address(void *addr){
-	if(addr == NULL || addr < (void *)0x08048000 || addr > (void *)0xc0000000){
+	if(addr == NULL || is_kernel_vaddr(addr) || !is_user_vaddr(addr)){
+		exit(-1);
+	}
+	if(pml4_get_page(thread_current()->pml4, addr) == NULL){
 		exit(-1);
 	}
 }
@@ -81,8 +146,33 @@ void halt(void){
 /* 현재 프로세스를 종료시키는 시스템 콜 */
 void exit(int status){
 	struct thread *curr_thread = thread_current();
-	printf("%s: exit(%d)\n", curr_thread->name, THREAD_DYING);
+	curr_thread->exit_status = status;
+	printf("%s: exit(%d)\n", curr_thread->name, status);
 	thread_exit();
+}
+
+int fork (const char *thread_name, struct intr_frame *f){
+	check_address(thread_name); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
+	return process_fork(thread_name, f);
+}
+
+/* 새로운 프로그램을 실행시키는 시스템 콜 */
+int exec (const char *cmd_line){
+	check_address(cmd_line); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
+
+	char *cmd_line_copy = palloc_get_page(0);
+	if(cmd_line_copy == NULL){
+		exit(-1);
+	}
+	strlcpy(cmd_line_copy, cmd_line, PGSIZE);
+	if(process_exec(cmd_line_copy) == -1){
+		exit(-1);
+	}
+}
+
+/* 자식 프로세스가 종료될 때까지 부모 프로세스를 대기시키는 시스템 콜 */
+int wait (int pid){
+	return process_wait(pid);
 }
 
 /* 파일을 생성하는 시스템 콜 */
@@ -93,6 +183,100 @@ bool create(const char *file, unsigned initial_size){
 
 /* 파일을 삭제하는 시스템 콜 */
 bool remove(const char *file){
-	check_address((void*)file); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
+	check_address(file); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
 	return filesys_remove(file);
+}
+
+int open(const char *file){
+	check_address(file); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
+	struct thread *cur = thread_current();
+	struct file *f = filesys_open(file);
+	if (f){
+		for (int i=2 ; i<128; i++){
+			if (!cur->fd_table[i]){
+				cur->fd_table[i] = f;
+				cur->next_fd = i+1;
+				return i;
+			}
+		}
+		file_close(f);
+	}
+	return -1;
+}
+
+int filesize(int fd){
+	struct file *file = thread_current()->fd_table[fd];
+	if (file){
+		return file_length(file);
+	}
+	return -1;
+}
+
+int read(int fd, void *buffer, unsigned size){
+	check_address(buffer);
+	if (fd == 1){
+		return -1;
+	}
+
+	if (fd == 0){
+		lock_acquire(&filesys_lock);
+		int bytes = input_getc();
+		lock_release(&filesys_lock);
+		return bytes;
+	}
+	struct file *file = thread_current()->fd_table[fd];
+	if (file){
+		lock_acquire(&filesys_lock);
+		int read_bytes = file_read(file, buffer, size);
+		lock_release(&filesys_lock);
+		return read_bytes;
+	}
+	return -1;
+}
+
+int write(int fd, const void *buffer, unsigned size){
+	check_address(buffer);
+
+	if (fd == 0){
+		return -1;
+	}
+
+	if (fd == 1){
+		lock_acquire(&filesys_lock);
+		putbuf(buffer, size);
+		lock_release(&filesys_lock);
+		return size;
+	}
+
+	struct file *file = thread_current()->fd_table[fd];
+	if (file){
+		lock_acquire(&filesys_lock);
+		int write_bytes = file_write(file, buffer, size);
+		lock_release(&filesys_lock);
+		return write_bytes;
+	}
+}
+
+void seek(int fd, unsigned position){
+	struct file *find_file = thread_current()->fd_table[fd];
+	if (find_file){
+		file_seek(find_file, position);
+	}
+}
+
+unsigned tell(int fd){
+	struct file *find_file = thread_current()->fd_table[fd];
+	if (find_file){
+		return file_tell(find_file);
+	}
+}
+
+void close(int fd){
+	struct file *file = thread_current()->fd_table[fd];
+	if (file){
+		lock_acquire(&filesys_lock);
+		thread_current()->fd_table[fd] = NULL;
+		file_close(file);
+		lock_release(&filesys_lock);
+	}
 }
