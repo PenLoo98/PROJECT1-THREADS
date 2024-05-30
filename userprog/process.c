@@ -511,7 +511,8 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
-
+	thread_current()->running_file = file;
+	file_deny_write (file); // 파일을 쓰기 금지
 	success = true;
 
 done:
