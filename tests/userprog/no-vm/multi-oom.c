@@ -107,6 +107,7 @@ make_children (void) {
   int pid;
   char child_name[128];
   for (; ; random_init (i), i++) {
+    printf("%d\n",i);
     if (i > EXPECTED_DEPTH_TO_PASS/2) {
       snprintf (child_name, sizeof child_name, "%s_%d_%s", "child", i, "X");
       pid = fork(child_name);
@@ -119,10 +120,14 @@ make_children (void) {
     }
 
     snprintf (child_name, sizeof child_name, "%s_%d_%s", "child", i, "O");
+    // printf("gd\n");
     pid = fork(child_name);
+    // printf("pid %d\n",pid);
     if (pid < 0) {
       exit (i);
     } else if (pid == 0) {
+      printf("자식\n");
+      //많은 파일을 오픈한다..
       consume_some_resources();
     } else {
       break;
@@ -130,13 +135,17 @@ make_children (void) {
   }
 
   int depth = wait (pid);
+  printf("depth가 큼 %d\n",depth);
   if (depth < 0)
 	  fail ("Should return > 0.");
 
-  if (i == 0)
-	  return depth;
-  else
-	  exit (depth);
+  if (i == 0){
+    printf("처음\n");
+    return depth;
+  }
+  else{
+    exit (depth);
+  }
 }
 
 int

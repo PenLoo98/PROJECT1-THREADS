@@ -1,9 +1,10 @@
-#include "threads/thread.h"
+#include "threads/init.h"
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -14,6 +15,7 @@
 #include "fixed_point.h" 
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "filesys/file.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -28,6 +30,7 @@
 #define NICE_DEFAULT 0
 #define RECENT_CPU_DEFAULT 0
 #define LOAD_AVG_DEFAULT 0
+#define FILE_DISCRIPTOR_TABLE_SIZE 150
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
@@ -218,6 +221,10 @@ thread_create (const char *name, int priority,
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
 
+	//file discriptor 초기화
+	t -> next_fd = 2;
+	t -> file_discriptor_table = (struct file**)calloc(FILE_DISCRIPTOR_TABLE_SIZE,sizeof(struct file*));
+
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
@@ -231,16 +238,14 @@ thread_create (const char *name, int priority,
 
 	//부모 프로세스 등록과 함께 자식 스레드로 등록
 	t->parent = thread_current();
-	printf("THREAD_BLOCKED??%d!!!!!!\n",THREAD_BLOCKED);
-	printf("parrent thead state : %d !!!!!\n",t->parent->status);
-	printf("thead state : %d !!!!!\n",t->status);
+	
 	list_push_back(&thread_current()->child_list,&t->child_elem);
 	
-	printf("thead state : %d !!!!!\n",t->status);
 	t->is_memory_loaded = false;
 	t->is_exit = false;
 	sema_init(&t->exit_sema,0);
 	sema_init(&t->load_sema,0);
+	sema_init(&t->wait_dying_sema,0);
 	/* Add to run queue. */
 	thread_unblock (t);
 	// 현재 실행 중인 스레드보다 우선순위가 높다면 교체
@@ -321,6 +326,7 @@ thread_exit (void) {
 	ASSERT (!intr_context ());
 
 #ifdef USERPROG
+	//유저 메모리 모두 반납,파일 디스크립터 삭제
 	process_exit ();
 #endif
 	/* Just set our status to dying and schedule another process.
@@ -334,8 +340,11 @@ thread_exit (void) {
 	list_remove(&thread_current()->all_elem);
 	struct thread *curr = thread_current ();
 	curr->is_exit = true;
-	sema_up(&curr->exit_sema);
 
+	file_close(curr->executable);
+
+	sema_up(&curr->exit_sema);
+	sema_down(&curr->wait_dying_sema);
 	do_schedule (THREAD_DYING);
 	NOT_REACHED ();
 }
@@ -589,7 +598,6 @@ kernel_thread (thread_func *function, void *aux) {
    NAME. */
 static void
 init_thread (struct thread *t, const char *name, int priority) {
-	printf("초기화 진입!!\n");
 	ASSERT (t != NULL);
 	ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
 	ASSERT (name != NULL);
@@ -610,11 +618,15 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->nice = NICE_DEFAULT; // 초기값 0
 	t->recent_cpu = RECENT_CPU_DEFAULT; // 초기값 0
 
+	t->executable = NULL;
+
 	//자식 리스트 초기화
 	list_init(&t->child_list);
 	// all_list에 추가
 	list_push_back(&all_list, &t->all_elem);
-	printf("초기화 성공!!\n");
+
+	t->file_discriptor_table = NULL;
+	t->next_fd = 0;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -735,6 +747,7 @@ static void
 do_schedule(int status) {
 	ASSERT (intr_get_level () == INTR_OFF);
 	ASSERT (thread_current()->status == THREAD_RUNNING);
+	// printf("디스트럭션 큐 비어 있나?%d",list_empty (&destruction_req));
 	while (!list_empty (&destruction_req)) {
 		struct thread *victim =
 			list_entry (list_pop_front (&destruction_req), struct thread, elem);

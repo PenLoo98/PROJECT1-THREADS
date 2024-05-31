@@ -13,4 +13,9 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (struct thread *next);
 
+//파일 디스크립터 다루기
+int process_add_file(struct file* f);
+struct file* process_get_file(int fd);
+void process_close_file(int fd);
+
 #endif /* userprog/process.h */

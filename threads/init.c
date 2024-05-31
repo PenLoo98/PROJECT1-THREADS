@@ -61,7 +61,6 @@ static void usage (void);
 
 static void print_stats (void);
 
-
 int main (void) NO_RETURN;
 
 /* Pintos main program. */

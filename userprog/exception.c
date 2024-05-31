@@ -140,6 +140,17 @@ page_fault (struct intr_frame *f) {
 	write = (f->error_code & PF_W) != 0;
 	user = (f->error_code & PF_U) != 0;
 
+	if(fault_addr=NULL) exit(-1);
+	if(user){
+		exit(-1);
+	}
+
+	//stack pointer가 가르키는 주소에서 page fault가 발생할 경우 exit(-1) 시스템 콜을
+	//호출하도록 수정
+	if(f->rsp == fault_addr){
+		exit(-1);
+	}
+
 #ifdef VM
 	/* For project 3 and later. */
 	if (vm_try_handle_fault (f, fault_addr, user, write, not_present))

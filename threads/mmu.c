@@ -121,6 +121,7 @@ static bool
 pgdir_for_each (uint64_t *pdp, pte_for_each_func *func, void *aux,
 		unsigned pml4_index, unsigned pdp_index) {
 	for (unsigned i = 0; i < PGSIZE / sizeof(uint64_t *); i++) {
+		// printf("dddd  %d!\n",i);
 		uint64_t *pte = ptov((uint64_t *) pdp[i]);
 		if (((uint64_t) pte) & PTE_P)
 			if (!pt_for_each ((uint64_t *) PTE_ADDR (pte), func, aux,
@@ -134,6 +135,7 @@ static bool
 pdp_for_each (uint64_t *pdp,
 		pte_for_each_func *func, void *aux, unsigned pml4_index) {
 	for (unsigned i = 0; i < PGSIZE / sizeof(uint64_t *); i++) {
+		// printf("mmmm  %d!\n",i);
 		uint64_t *pde = ptov((uint64_t *) pdp[i]);
 		if (((uint64_t) pde) & PTE_P)
 			if (!pgdir_for_each ((uint64_t *) PTE_ADDR (pde), func,
@@ -229,6 +231,8 @@ pml4_get_page (uint64_t *pml4, const void *uaddr) {
  * otherwise it is read-only.
  * Returns true if successful, false if memory allocation
  * failed. */
+//kernel virtual address로 사용한 공간을 가져와서 user virtual memory에 매핑해주는 것 같다?
+//palloc_get_page로 물리적인 공간을 가져와서 그 공간을 페이지 테이블에 매핑 시키도록 하자.
 bool
 pml4_set_page (uint64_t *pml4, void *upage, void *kpage, bool rw) {
 	ASSERT (pg_ofs (upage) == 0);

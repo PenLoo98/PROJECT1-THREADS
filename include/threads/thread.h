@@ -118,8 +118,18 @@ struct thread {
 	//프로세스 종료 유무
 	bool is_exit;
 	struct semaphore exit_sema;
-	struct semaphore load_sema;
 	tid_t exit_stat;
+
+	struct semaphore wait_dying_sema;
+
+	struct semaphore load_sema;
+
+	struct file** file_discriptor_table;
+	int next_fd;
+
+	struct intr_frame parent_if;
+
+	struct file* executable;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
