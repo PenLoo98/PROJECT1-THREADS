@@ -209,7 +209,7 @@ thread_create (const char *name, int priority,
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
-	t = palloc_get_page (PAL_ZERO);
+	t = palloc_get_page (0);
 	if (t == NULL)
 		return TID_ERROR;
 
@@ -237,8 +237,9 @@ thread_create (const char *name, int priority,
 	// 현재 스레드의 자식으로 추가 
 	list_push_back(&thread_current()->child_list, &t->child_elem);
 
-	t->fd_table = palloc_get_page(0);
+	t->fd_table = palloc_get_page(PAL_ZERO);
 	if (t->fd_table == NULL) {
+		palloc_free_page(t);
 		return TID_ERROR;
 	}
 
