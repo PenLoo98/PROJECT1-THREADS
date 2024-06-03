@@ -135,6 +135,7 @@ thread_init (void) {
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
+	// list_push_back(&all_list, &initial_thread->all_elem);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
 }
@@ -208,7 +209,7 @@ thread_create (const char *name, int priority,
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
-	t = palloc_get_page (PAL_ZERO);
+	t = palloc_get_page (0);
 	if (t == NULL)
 		return TID_ERROR;
 
@@ -226,6 +227,25 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
+
+	/* 파일 시스템 */
+	t->parent = thread_current();
+	sema_init(&t->exit_sema, 0);
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->load_sema, 0);
+
+	// 현재 스레드의 자식으로 추가 
+	list_push_back(&thread_current()->child_list, &t->child_elem);
+
+	t->fd_table = palloc_get_page(PAL_ZERO);
+	if (t->fd_table == NULL) {
+		palloc_free_page(t);
+		return TID_ERROR;
+	}
+
+	t->fd_table[0] = 1;
+	t->fd_table[1] = 2;
+	t->next_fd = 2;
 
 	/* Add to run queue. */
 	thread_unblock (t);
@@ -322,17 +342,19 @@ thread_exit (void) {
    may be scheduled again immediately at the scheduler's whim. */
 void
 thread_yield (void) {
-	struct thread *curr = thread_current ();
-	enum intr_level old_level;
+	if(!intr_context()){
+		struct thread *curr = thread_current ();
+		enum intr_level old_level;
 
-	ASSERT (!intr_context ());
+		ASSERT (!intr_context ());
 
-	old_level = intr_disable ();
-	if (curr != idle_thread)
-		list_insert_ordered(&ready_list, &curr->elem, 
-		get_higher_priority, NULL);
-	do_schedule (THREAD_READY);
-	intr_set_level (old_level);
+		old_level = intr_disable ();
+		if (curr != idle_thread)
+			list_insert_ordered(&ready_list, &curr->elem, 
+			get_higher_priority, NULL);
+		do_schedule (THREAD_READY);
+		intr_set_level (old_level);
+	}
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -586,6 +608,15 @@ init_thread (struct thread *t, const char *name, int priority) {
 
 	// all_list에 추가
 	list_push_back(&all_list, &t->all_elem);
+
+	// syscalls 관련 초기화
+	list_init(&t->child_list);
+	sema_init(&t->exit_sema, 0);
+	sema_init(&t->wait_sema, 0);
+
+	// file system 관련 초기화
+	t->next_fd = 2; // 0, 1은 stdin, stdout이므로 2부터 시작
+	t->running_file = NULL;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

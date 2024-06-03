@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -96,14 +97,37 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 
 	int64_t wakeup_tick; // thread가 깨어날 시간
+
+	/* Priority Donation 관련 멤버 */
 	int init_priority; // thread의 초기 priority
 	struct lock *wait_on_lock; // thread가 기다리는 lock
-	struct list donations; // priority donation list
-	struct list_elem d_elem; // donation list element
+	struct list donations; // 이 스레드가 가진 lock을 기다리는 스레드들의 리스트
+	struct list_elem d_elem; // 특정 lock을 가진 스레드를 기다릴 때 사용되는 elem
 
-	int nice; // 높은 수록 우선순위 낮아짐
+	/* MLFQS 관련 멤버 */
+	int nice; // 높을 수록 우선순위 낮아짐
 	int recent_cpu; // 최근에 얼마나 많은 CPU time을 사용했는지를 나타내는 변수
-	struct list_elem all_elem; // 모든 thread들을 관리하는 list
+	struct list_elem all_elem; // 모든 thread들을 관리하는 elem
+
+	/* 프로세스 계층 구조 관련 멤버 */
+	struct thread *parent; // 부모 thread
+	struct list_elem child_elem; // 누군가의 자식 프로세스로 리스트에 삽입될 때 사용되는 elem
+	struct list child_list; // 자식 thread들을 관리하는 리스트
+
+	bool is_memory_loaded; // 메모리에 로드되었는지
+	bool is_exit; // 종료되었는지
+	bool is_exit_called; // exit()가 호출되었는지
+	struct semaphore exit_sema; // 종료될 때 부모 스레드가 자식 스레드의 종료 시간을 주기 위한 세마포어
+	struct semaphore wait_sema; // wait() 시에 부모 스레드가 자식 스레드의 종료를 기다리기 위한 세마포어
+	struct semaphore load_sema; // load() 시에 부모 스레드가 자식 스레드의 메모리 로드를 기다리기 위한 세마포어
+	tid_t exit_status; // 종료 상태: status와 달리 exit() 시에만 사용됨
+
+	/* userprog 관련 함수 */
+	struct file **fd_table; // 파일 디스크립터 테이블
+	int next_fd; // 다음에 할당할 파일 디스크립터
+
+	struct intr_frame parent_if; // 부모 프로세스의 intr_frame
+	struct file *running_file; // 실행 중인 파일
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
