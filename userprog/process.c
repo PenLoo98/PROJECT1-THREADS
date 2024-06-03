@@ -101,6 +101,11 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	// 자식 스레드가 로드가 완료될 때까지 대기
 	sema_down(&child_thread->load_sema);
 
+	// 자식이 로드되다가 오류로 exit한 경우
+	if (child_thread->exit_status == TID_ERROR){ 
+		return TID_ERROR;
+	}
+
 	// 자식 프로세스의 pid 반환
 	return tid;
 }
@@ -212,7 +217,8 @@ __do_fork (void *aux) {
 		do_iret (&if_);
 error:
 	sema_up(&current->load_sema);
-	thread_exit ();
+	exit(TID_ERROR); // fork 실패 시 exit
+	// thread_exit ();
 }
 
 /* Switch the current execution context to the f_name.
