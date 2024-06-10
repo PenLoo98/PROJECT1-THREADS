@@ -124,7 +124,8 @@ bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
 /* 추가한 함수 */
-page_hash (const struct hash_elem *elem, void *aux UNUSED);
-page_less (const struct hash_elem *hash_a, const struct hash_elem *hash_b, void *aux UNUSED);
+uint64_t page_hash (const struct hash_elem *elem, void *aux UNUSED);
+bool page_less (const struct hash_elem *hash_a, const struct hash_elem *hash_b, void *aux UNUSED);
+void hash_page_destroy(struct hash_elem *e, void *aux);
 
 #endif  /* VM_VM_H */

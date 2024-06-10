@@ -136,6 +136,8 @@ struct thread {
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
 	struct supplemental_page_table spt;
+	void *stack_bottom; // 스택의 가장 아래 주소
+	void *stack_pointer; // 스택의 포인터
 #endif
 
 	/* Owned by thread.c. */

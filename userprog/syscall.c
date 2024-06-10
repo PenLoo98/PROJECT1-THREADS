@@ -15,7 +15,15 @@
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
+// Project 3 - Anonymous Page
+#ifndef VM
 void check_address(void *addr);
+#else
+/** #Project 3: Anonymous Page */
+struct page *check_address(void *addr);
+#endif
+
 void get_argument(void *rsp, int *arg, int count);
 void halt(void);
 void exit(int status);
@@ -117,6 +125,8 @@ syscall_handler (struct intr_frame *f UNUSED) {
 }
 
 /* 주소유효성 검사: 포인터가 가리키는 주소가 사용자 영역에 속해있는지 확인*/
+#ifndef VM
+/* Project 2 - System Call */
 void check_address(void *addr){
 	if(addr == NULL || is_kernel_vaddr(addr) || !is_user_vaddr(addr)){
 		exit(-1);
@@ -125,6 +135,21 @@ void check_address(void *addr){
 		exit(-1);
 	}
 }
+#else
+/** Project 3-Anonymous Page */
+struct page *check_address(void *addr) {
+    struct thread *curr = thread_current();
+
+    if (is_kernel_vaddr(addr) || addr == NULL){
+        exit(-1);
+	}
+	if (!spt_find_page(&curr->spt, addr)){
+		exit(-1);
+	}
+
+    return spt_find_page(&curr->spt, addr);
+}
+#endif
 
 /* 유저 스택에 있는 인자들을 커널에 저장 
    64비트 환경에서는 86-64 Call Convention(ABI)에 따라 인자들이 스택에 저장된다.
