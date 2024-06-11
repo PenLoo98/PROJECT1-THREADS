@@ -36,6 +36,8 @@ struct page_operations;
 struct thread;
 
 #define VM_TYPE(type) ((type) & 7)
+/** Project 3-Stack Growth*/
+#define STACK_LIMIT (USER_STACK - (1 << 20))  
 
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are

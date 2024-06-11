@@ -74,6 +74,11 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
 	// printf("system call!\n");
 	// thread_exit();
+
+	#ifdef VM
+    	thread_current()->stack_pointer = f->rsp;
+	#endif
+
 	int syscall_num = f->R.rax;
 	switch (syscall_num) {
 		case SYS_HALT:
@@ -201,32 +206,44 @@ int wait (int pid){
 }
 
 /* 파일을 생성하는 시스템 콜 */
+/* 파일을 생성하는 시스템 콜 */
 bool create(const char *file, unsigned initial_size){
 	check_address((void*)file); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
-	return filesys_create(file, initial_size);
+
+	lock_acquire(&filesys_lock);
+	bool success = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+
+	return success;
 }
 
 /* 파일을 삭제하는 시스템 콜 */
 bool remove(const char *file){
-	check_address(file); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
-	return filesys_remove(file);
+    check_address(file);
+
+    lock_acquire(&filesys_lock);
+    bool success = filesys_remove(file);
+    lock_release(&filesys_lock);
+
+    return success;
 }
 
 int open(const char *file){
 	check_address(file); // void*로 묵시적 형변환을 하면 const속성이 사라질 수 있다.
-	struct thread *cur = thread_current();
-	struct file *f = filesys_open(file);
-	if (f){
-		for (int i=2 ; i<128; i++){
-			if (!cur->fd_table[i]){
-				cur->fd_table[i] = f;
-				cur->next_fd = i+1;
-				return i;
-			}
-		}
-		file_close(f);
+
+	lock_acquire(&filesys_lock);
+	struct file *opened_file = filesys_open(file);
+	if (opened_file==NULL){ // 파일이 없을 경우
+		lock_release(&filesys_lock);
+		return -1;
 	}
-	return -1;
+	// 파일이 있을 경우
+	int fd = process_add_file(opened_file);
+	if(fd == -1){
+		file_close(opened_file);
+	}
+	lock_release(&filesys_lock);
+	return fd;
 }
 
 int filesize(int fd){
@@ -239,6 +256,14 @@ int filesize(int fd){
 
 int read(int fd, void *buffer, unsigned size){
 	check_address(buffer);
+
+	/* Project3-Stack Growth */
+	#ifdef VM
+		struct page *page = spt_find_page(&thread_current()->spt, buffer);
+		if (page && !page->writable)
+			exit(-1);
+	#endif
+
 	if (fd == 1){
 		return -1;
 	}

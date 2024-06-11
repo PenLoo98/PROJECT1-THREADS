@@ -205,6 +205,15 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	bool success = false;
+	addr = pg_round_down(addr);
+    if (vm_alloc_page(VM_ANON | VM_MARKER_0, addr, true)) {
+        success = vm_claim_page(addr);
+
+        if (success) {
+            thread_current()->stack_bottom -= PGSIZE;
+        }
+    }
 }
 
 /* Handle the fault on write_protected page */
@@ -228,7 +237,15 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		return false;
 	}
 
-	if (not_present){
+	if (not_present){ // 페이지가 없는 경우
+		// bogus page fault: 페이지 테이블이 가리키는 주소가 디스크에는 있지만 메모리에 없는 경우
+		void *rsp = user ? f->rsp : thread_current()->stack_pointer;
+
+		if (STACK_LIMIT <= rsp - 8 && rsp - 8 <= addr && addr <= USER_STACK){
+			vm_stack_growth(addr);
+			return true;
+		}
+
         page = spt_find_page(spt, addr);
         if (page == NULL)
             return false;
