@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -433,11 +434,16 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ()); // 페이지 테이블 활성화
 
 	/* Open executable file. */
+	lock_acquire(&filesys_lock); // Project 3 - Memory Mapped File
 	file = filesys_open (file_name); // 프로그램 파일 open
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+
+	// /* Deny writes to file. */
+	// t->running_file = file;
+	// file_deny_write (file); // 파일을 쓰기 금지
 
 	/* Read and verify executable header. */
 	// ELF 헤더 읽어서 저장
@@ -524,6 +530,7 @@ load (const char *file_name, struct intr_frame *if_) {
 done:
 	/* We arrive here whether the load is successful or not. */
 	// file_close (file); // 파일을 열어놔야 프로그램 실행동안 쓰기 작업이 블록된다.
+	lock_release(&filesys_lock); // Project 3 - Memory Mapped File
 	return success;
 }
 

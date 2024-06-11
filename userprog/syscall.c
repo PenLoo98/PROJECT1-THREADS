@@ -13,6 +13,9 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
+// Project 3 - Memory Mapped Files
+#include "userprog/process.h"
+
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
@@ -190,7 +193,7 @@ void* mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 
     struct file *file = process_get_file(fd);
 
-    if ((file >= 0 && file <= 2) || file == NULL)
+    if ((file >= STDIN && file <= STDERR) || file == NULL)
         return NULL;
 
     if (file_length(file) == 0 || (long)length <= 0)

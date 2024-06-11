@@ -20,4 +20,8 @@ void process_close_file (int fd);
     bool lazy_load_segment (struct page *page, void *aux); 
 #endif
 
+#define STDIN 1
+#define STDOUT 2
+#define STDERR 3
+
 #endif /* userprog/process.h */
