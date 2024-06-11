@@ -22,6 +22,9 @@ void check_address(void *addr);
 #else
 /** #Project 3: Anonymous Page */
 struct page *check_address(void *addr);
+void check_buffer(void *buffer, size_t size, bool writable);
+void* mmap(void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
 #endif
 
 void get_argument(void *rsp, int *arg, int count);
@@ -123,6 +126,15 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		case SYS_CLOSE:
 			close(f->R.rdi);
 			break;
+		/* Project 3: Memory Mapped Files */
+	#ifdef VM
+        case SYS_MMAP:
+            f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+            break;
+		case SYS_MUNMAP:
+            munmap(f->R.rdi);
+            break;
+	#endif
 		default:
 			exit(-1);
 			break;
@@ -154,6 +166,44 @@ struct page *check_address(void *addr) {
 
     return spt_find_page(&curr->spt, addr);
 }
+
+/* Project 3-Memory Mapped Files 버퍼 검사*/
+void check_buffer(void *buffer, size_t size, bool writable) {
+    for (size_t i = 0; i < size; i +=8) {
+        /* buffer가 spt에 존재하는지 검사 */
+        struct page *page = check_address(buffer + i);
+
+        if (!page || (writable && !(page->writable))) /** Project 3-Copy On Write */
+            exit(-1);
+    }
+}
+
+void* mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+    if (!addr || pg_round_down(addr) != addr || is_kernel_vaddr(addr) || is_kernel_vaddr(addr + length))
+        return NULL;
+
+    if (offset != pg_round_down(offset) || offset % PGSIZE != 0)
+        return NULL;
+
+    if (spt_find_page(&thread_current()->spt, addr))
+        return NULL;
+
+    struct file *file = process_get_file(fd);
+
+    if ((file >= 0 && file <= 2) || file == NULL)
+        return NULL;
+
+    if (file_length(file) == 0 || (long)length <= 0)
+        return NULL;
+
+    return do_mmap(addr, length, writable, file, offset);
+}
+
+
+void munmap (void *addr){
+	do_munmap(addr);
+}
+
 #endif
 
 /* 유저 스택에 있는 인자들을 커널에 저장 
@@ -255,6 +305,9 @@ int filesize(int fd){
 }
 
 int read(int fd, void *buffer, unsigned size){
+# ifdef VM
+	check_buffer(buffer, size, true);
+#endif
 	check_address(buffer);
 
 	/* Project3-Stack Growth */
@@ -285,6 +338,9 @@ int read(int fd, void *buffer, unsigned size){
 }
 
 int write(int fd, const void *buffer, unsigned size){
+# ifdef VM
+	check_buffer(buffer, size, false);
+#endif
 	check_address(buffer);
 
 	if (fd == 0){

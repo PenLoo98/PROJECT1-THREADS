@@ -7,6 +7,10 @@ struct page;
 enum vm_type;
 
 struct file_page {
+	 /* Project 3: Memory Mapped Files */
+	struct file *file;
+	off_t ofs;
+	uint32_t read_bytes;
 };
 // Project 3 - lazy_load_segment에서 사용할 구조체
 struct file_info {

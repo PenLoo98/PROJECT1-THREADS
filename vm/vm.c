@@ -150,6 +150,7 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+	hash_delete(&thread_current()->spt.hash_spt, &page->hash_elem);
 	vm_dealloc_page (page);
 	return true;
 }
@@ -323,12 +324,31 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 				src_page->uninit.init,
 				src_page->uninit.aux);
 		}
-		else{
-			if (vm_alloc_page(src_type, src_page->va, src_page->writable) && vm_claim_page(src_page->va)){
-				struct page *dst_page = spt_find_page(dst, src_page->va);
-				memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
-			}
-		}
+		else if (src_type == VM_FILE) {
+            struct file_page *aux = malloc(sizeof(struct file_page));
+            aux->file = src_page->file.file;
+            aux->ofs = src_page->file.ofs;
+            aux->read_bytes = src_page->file.read_bytes;
+
+            if (!vm_alloc_page_with_initializer(src_type, src_page->va, src_page->writable, NULL, aux))
+                return false;
+
+            struct page *dst_page = spt_find_page(dst, src_page->va);
+            file_backed_initializer(dst_page, src_type, NULL);
+            dst_page->frame = src_page->frame;
+            pml4_set_page(thread_current()->pml4, dst_page->va, src_page->frame->kva, src_page->writable);
+        }
+
+        else {                                          
+            if (!vm_alloc_page(src_type, src_page->va, src_page->writable)) 
+                return false;
+
+            if (!vm_claim_page(src_page->va))  
+                return false;
+
+            struct page *dst_page = spt_find_page(dst, src_page->va); 
+            memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+        }
 	}
 	return true;
 }

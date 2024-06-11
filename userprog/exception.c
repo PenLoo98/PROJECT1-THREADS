@@ -145,16 +145,12 @@ page_fault (struct intr_frame *f) {
 	/* For project 3 and later. */
 	if (vm_try_handle_fault (f, fault_addr, user, write, not_present))
 		return;
-	else{
-		page_fault_cnt++;
-		exit(-1);
-	}
 #endif
 
-	/* Count page faults. */
-	page_fault_cnt++;
 	/* 페이지 폴트 발생 시 exit(-1) 호출 */
 	exit(-1);
+	/* Count page faults. */
+	page_fault_cnt++;
 
 	/* If the fault is true fault, show info and exit. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",

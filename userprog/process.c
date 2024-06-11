@@ -761,7 +761,7 @@ install_page (void *upage, void *kpage, bool writable) {
  * upper block. */
 /* 페이지 폴트 발생시 필요한 세그먼트를 파일에서 메모리로 지연 로딩한다.
    실행 가능한 파일의 페이지들을 초기화한다. */
-static bool
+bool
 lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
